@@ -60,6 +60,7 @@ pub struct AgendaApp {
     pub focus_timer: FocusTimer,
     pub tray: Option<TrayController>,
     pub updater: Updater,
+    pub last_update_check: Instant,
     pub store: TaskStore,
     pub storage_path: PathBuf,
     // Draft fields for creating tasks
@@ -123,6 +124,7 @@ impl AgendaApp {
             focus_timer: FocusTimer::new(),
             tray: None,
             updater,
+            last_update_check: Instant::now(),
             store,
             storage_path,
             new_title: String::new(),
@@ -1710,6 +1712,15 @@ impl eframe::App for AgendaApp {
             self.maybe_send_daily_notification();
         }
         self.poll_tray(ctx);
+        if self.last_update_check.elapsed() >= Duration::from_secs(300)
+            && !matches!(
+                self.updater.status,
+                UpdateStatus::Checking | UpdateStatus::Downloading(_)
+            )
+        {
+            self.last_update_check = Instant::now();
+            self.updater.check_for_updates();
+        }
         if let Some(installer_path) = self.updater.poll() {
             if let Err(err) = updater::launch_installer(&installer_path) {
                 self.status_error = Some(err);
