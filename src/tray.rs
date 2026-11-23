@@ -1,11 +1,17 @@
+use std::os::windows::process::CommandExt;
+use std::process::Command;
+
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Actions triggered by clicking the system tray icon or its context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
     OpenMini,
     OpenFull,
+    NotifyToday,
     Quit,
 }
 
@@ -14,6 +20,7 @@ pub struct TrayController {
     tray: TrayIcon,
     id_mini: tray_icon::menu::MenuId,
     id_full: tray_icon::menu::MenuId,
+    id_notify: tray_icon::menu::MenuId,
     id_quit: tray_icon::menu::MenuId,
     last_tooltip: String,
     last_count: usize,
@@ -25,14 +32,17 @@ impl TrayController {
         let menu = Menu::new();
         let item_mini = MenuItem::new("Mini-Calendario (junto al reloj)", true, None);
         let item_full = MenuItem::new("Abrir Mi Agenda (Completa)", true, None);
+        let item_notify = MenuItem::new("Notificación de hoy", true, None);
         let item_quit = MenuItem::new("Salir", true, None);
 
         let id_mini = item_mini.id().clone();
         let id_full = item_full.id().clone();
+        let id_notify = item_notify.id().clone();
         let id_quit = item_quit.id().clone();
 
         menu.append(&item_mini).map_err(|e| e.to_string())?;
         menu.append(&item_full).map_err(|e| e.to_string())?;
+        menu.append(&item_notify).map_err(|e| e.to_string())?;
         menu.append(&item_quit).map_err(|e| e.to_string())?;
 
         let rgba = build_tray_rgba(32, 0);
@@ -50,6 +60,7 @@ impl TrayController {
             tray,
             id_mini,
             id_full,
+            id_notify,
             id_quit,
             last_tooltip: tooltip,
             last_count: 0,
@@ -94,6 +105,9 @@ impl TrayController {
             }
             if event.id == self.id_full {
                 return Some(TrayAction::OpenFull);
+            }
+            if event.id == self.id_notify {
+                return Some(TrayAction::NotifyToday);
             }
             if event.id == self.id_quit {
                 return Some(TrayAction::Quit);
@@ -211,5 +225,87 @@ const fn digit_glyph(n: usize) -> [u8; 7] {
         8 => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
         9 => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
         _ => [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000], // '+'
+    }
+}
+
+pub fn xml_escape(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+pub fn build_daily_notification_body(pending_titles: &[String]) -> String {
+    if pending_titles.is_empty() {
+        return "No tienes tareas pendientes para hoy.".to_owned();
+    }
+    let mut lines = vec![format!(
+        "Tienes {} pendiente{} hoy:",
+        pending_titles.len(),
+        if pending_titles.len() == 1 { "" } else { "s" }
+    )];
+    for title in pending_titles.iter().take(4) {
+        lines.push(format!("• {title}"));
+    }
+    if pending_titles.len() > 4 {
+        lines.push(format!("+ {} más...", pending_titles.len() - 4));
+    }
+    lines.join("\n")
+}
+
+/// Fires a native Windows 10/11 Toast notification asynchronously without blocking the UI.
+pub fn show_windows_toast(title: &str, body: &str) {
+    let title_xml = xml_escape(title).replace('\'', "''");
+    let body_xml = xml_escape(body).replace('\'', "''");
+
+    std::thread::spawn(move || {
+        let script = format!(
+            "$xml = '<toast><visual><binding template=\"ToastGeneric\"><text>{title_xml}</text><text>{body_xml}</text></binding></visual></toast>'; \
+             $doc = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime]::New(); \
+             $doc.LoadXml($xml); \
+             $appId = '{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe'; \
+             [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]::CreateToastNotifier($appId).Show([Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime]::New($doc))"
+        );
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_notification_body_should_format_pending_items() {
+        assert_eq!(
+            build_daily_notification_body(&[]),
+            "No tienes tareas pendientes para hoy."
+        );
+        let items = vec![
+            "09:00 Reunión".to_owned(),
+            "11:00 Estudiar".to_owned(),
+            "15:00 Gimnasio".to_owned(),
+            "17:00 Compras".to_owned(),
+            "20:00 Leer".to_owned(),
+        ];
+        let body = build_daily_notification_body(&items);
+        assert!(body.contains("Tienes 5 pendientes hoy:"));
+        assert!(body.contains("• 09:00 Reunión"));
+        assert!(body.contains("+ 1 más..."));
+    }
+
+    #[test]
+    fn xml_escape_should_sanitize_special_chars() {
+        assert_eq!(xml_escape("A & B <C>"), "A &amp; B &lt;C&gt;");
     }
 }

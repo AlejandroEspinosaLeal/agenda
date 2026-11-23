@@ -14,7 +14,9 @@ use crate::focus::{FocusPreset, FocusTimer};
 use crate::model::{Priority, Recurrence, TaskDraft, TaskStore};
 use crate::nlp;
 use crate::theme::{apply_theme, Palette, Radius, Spacing};
-use crate::tray::{TrayAction, TrayController};
+use crate::tray::{
+    build_daily_notification_body, show_windows_toast, TrayAction, TrayController,
+};
 use crate::updater::{self, UpdateStatus, Updater};
 use crate::views::{self, COLOR_PRESETS, TAG_PRESETS};
 
@@ -138,7 +140,26 @@ impl AgendaApp {
             let pending = app.pending_titles_today();
             t.sync_today(&pending);
         }
-        Self { tray, ..app }
+        let mut app = Self { tray, ..app };
+        app.maybe_send_daily_notification();
+        app
+    }
+
+    pub fn send_daily_notification_now(&self) {
+        let pending = self.pending_titles_today();
+        let title = format!("Mi Agenda · Hoy ({:02}/{:02})", self.today.day, self.today.month);
+        let body = build_daily_notification_body(&pending);
+        show_windows_toast(&title, &body);
+    }
+
+    pub fn maybe_send_daily_notification(&mut self) {
+        let today_key = self.today.to_key();
+        if self.store.last_notified_date.as_deref() == Some(today_key.as_str()) {
+            return;
+        }
+        self.send_daily_notification_now();
+        self.store.last_notified_date = Some(today_key);
+        self.persist();
     }
 
     fn pending_titles_today(&self) -> Vec<String> {
@@ -362,6 +383,10 @@ impl AgendaApp {
             }
             TrayAction::OpenFull => {
                 self.set_mini_mode(ctx, false);
+            }
+            TrayAction::NotifyToday => {
+                self.today = Date::today();
+                self.send_daily_notification_now();
             }
             TrayAction::Quit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1269,6 +1294,7 @@ impl AgendaApp {
                         let cmd_filter = q.trim_start_matches('>').trim().to_lowercase();
                         let commands = [
                             ("hoy", "Ir a hoy (T)"),
+                            ("notificacion", "Mostrar notificación de hoy"),
                             ("tema", "Cambiar tema claro / oscuro"),
                             ("enfoque", "Iniciar / Salir de Modo Enfoque (F)"),
                             ("markdown", "Exportar semana a Markdown (.md)"),
@@ -1305,6 +1331,10 @@ impl AgendaApp {
                                     "hoy" => {
                                         self.today = Date::today();
                                         self.select_date(self.today);
+                                    }
+                                    "notificacion" => {
+                                        self.today = Date::today();
+                                        self.send_daily_notification_now();
                                     }
                                     "tema" => self.dark_mode = !self.dark_mode,
                                     "enfoque" => self.focus_mode = !self.focus_mode,
@@ -1736,6 +1766,11 @@ impl AgendaApp {
 
 impl eframe::App for AgendaApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let real_today = Date::today();
+        if real_today != self.today {
+            self.today = real_today;
+            self.maybe_send_daily_notification();
+        }
         self.poll_tray(ctx);
         if let Some(installer_path) = self.updater.poll() {
             if let Err(err) = updater::launch_installer(&installer_path) {
