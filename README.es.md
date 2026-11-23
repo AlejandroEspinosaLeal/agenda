@@ -5,7 +5,7 @@
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-  ![Version](https://img.shields.io/badge/Version-1.1.10-4338CA)
+  ![Version](https://img.shields.io/badge/Version-1.2.0-4338CA)
 
   <p><a href="README.md">English</a> | <strong>Español</strong></p>
 </div>
@@ -26,8 +26,10 @@
   - Oculta barras laterales, centra el bloque activo y muestra un temporizador configurable **Pomodoro (`25/5`) / Deep Work (`50/10`) / Restante del bloque** junto a sus notas (consumo 0 de CPU en pausa).
 - **Exportación real**:
   - Exporta tu semana a **Markdown (`.md`)**, texto plano (`.txt`) o **iCalendar estándar (`.ics` RFC 5545)** con `VCALENDAR`/`VEVENT`/`RRULE`.
+- **Paletas de colores y Modo Claro/Oscuro**:
+  - 6 paletas accesibles (**Índigo**, **Océano**, **Bosque**, **Terracota**, **Rosa**, **Lavanda**) con preferencia guardada de modo claro u oscuro.
 - **Guía interactiva de bienvenida (`?`)**:
-  - Tour con spotlight en el primer uso que recorre automáticamente Mensual, Semanal, Diaria, Backlog, `Ctrl+K`, Modo Enfoque y Tema/Notificaciones (repetible en cualquier momento desde el botón `?`).
+  - Tour con spotlight en el primer uso que recorre automáticamente Mensual, Semanal, Diaria, Backlog, `Ctrl+K`, Modo Enfoque y Paletas/Notificaciones (repetible en cualquier momento desde el botón `?`).
 - **Integración con Windows y Auto-actualizador**:
   - **Notificación diaria nativa en Windows** una vez al día al iniciar o cambiar de día con tus pendientes (también disponible desde la bandeja o `Ctrl+K`).
   - **Icono en la bandeja del sistema** (`tray-icon`) con insignia numérica, `--autostart` e instalador **Inno Setup** (`Mi_Agenda_Setup.exe`).

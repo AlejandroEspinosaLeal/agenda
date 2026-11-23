@@ -66,8 +66,8 @@ pub const TOUR_STEPS: [TourStep; 8] = [
     TourStep {
         target: TourTarget::ThemeAndHelp,
         view: Some(ActiveView::Monthly),
-        title: "8. Tema, notificaciones y ayuda (?)",
-        body: "Cambia entre modo claro/oscuro, recibe una notificación diaria en Windows con tus pendientes y repite esta guía cuando quieras con el botón \"?\".",
+        title: "8. Paletas de colores, notificaciones y ayuda (?)",
+        body: "Elige entre 6 paletas (Índigo, Océano, Bosque, Terracota, Rosa, Lavanda), alterna modo claro/oscuro, recibe tu notificación diaria y repite esta guía con \"?\".",
     },
 ];
 

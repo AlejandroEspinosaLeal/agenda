@@ -1,6 +1,6 @@
 [package]
 name = "organizador_tareas"
-version = "1.1.10"
+version = "1.2.0"
 edition = "2021"
 description = "Organizador de tareas con cuadrícula de calendario mensual en Rust"
 

@@ -1,6 +1,57 @@
 use std::fs;
 
 use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, Rounding, Stroke, Vec2};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ThemePreset {
+    #[default]
+    Indigo,
+    Ocean,
+    Forest,
+    Terracotta,
+    Rose,
+    Lavender,
+}
+
+impl ThemePreset {
+    pub const ALL: [Self; 6] = [
+        Self::Indigo,
+        Self::Ocean,
+        Self::Forest,
+        Self::Terracotta,
+        Self::Rose,
+        Self::Lavender,
+    ];
+
+    pub const fn label_es(self) -> &'static str {
+        match self {
+            Self::Indigo => "Índigo",
+            Self::Ocean => "Océano",
+            Self::Forest => "Bosque",
+            Self::Terracotta => "Terracota",
+            Self::Rose => "Rosa",
+            Self::Lavender => "Lavanda",
+        }
+    }
+
+    pub const fn accent_color(self, dark: bool) -> Color32 {
+        match (self, dark) {
+            (Self::Indigo, false) => Color32::from_rgb(67, 56, 202),
+            (Self::Indigo, true) => Color32::from_rgb(129, 140, 248),
+            (Self::Ocean, false) => Color32::from_rgb(3, 105, 161),
+            (Self::Ocean, true) => Color32::from_rgb(56, 189, 248),
+            (Self::Forest, false) => Color32::from_rgb(4, 120, 87),
+            (Self::Forest, true) => Color32::from_rgb(52, 211, 153),
+            (Self::Terracotta, false) => Color32::from_rgb(194, 65, 12),
+            (Self::Terracotta, true) => Color32::from_rgb(251, 146, 60),
+            (Self::Rose, false) => Color32::from_rgb(190, 24, 93),
+            (Self::Rose, true) => Color32::from_rgb(244, 114, 182),
+            (Self::Lavender, false) => Color32::from_rgb(109, 40, 217),
+            (Self::Lavender, true) => Color32::from_rgb(167, 139, 250),
+        }
+    }
+}
 
 /// Centralized spacing tokens (4px base scale).
 pub struct Spacing;
@@ -63,6 +114,28 @@ pub struct Palette {
 }
 
 impl Palette {
+    pub fn for_theme(preset: ThemePreset, dark: bool) -> Self {
+        let mut p = if dark { Self::DARK } else { Self::LIGHT };
+        if preset == ThemePreset::Indigo {
+            return p;
+        }
+        let accent = preset.accent_color(dark);
+        p.accent = accent;
+        if dark {
+            p.accent_soft = blend_rgb(accent, p.bg_surface, 0.24);
+            p.bg_cell_selected = blend_rgb(accent, p.bg_surface, 0.28);
+            p.bg_cell_hover = blend_rgb(accent, p.bg_surface, 0.14);
+            p.bg_elevated = blend_rgb(accent, p.bg_surface, 0.12);
+        } else {
+            p.accent_soft = blend_rgb(accent, p.bg_surface, 0.14);
+            p.bg_cell_selected = blend_rgb(accent, p.bg_surface, 0.18);
+            p.bg_cell_hover = blend_rgb(accent, p.bg_surface, 0.08);
+            p.bg_elevated = blend_rgb(accent, p.bg_canvas, 0.08);
+            p.bg_canvas = blend_rgb(accent, Color32::from_rgb(250, 250, 252), 0.03);
+        }
+        p
+    }
+
     /// Clarity Suite editorial light theme (`#F8F9FC` canvas, `#4338CA` indigo primary).
     pub const LIGHT: Self = Self {
         dark: false,
@@ -175,8 +248,8 @@ pub fn setup_fonts(ctx: &egui::Context) {
 }
 
 /// Applies spacing, rounding, and color tokens to `egui::Context`.
-pub fn apply_theme(ctx: &egui::Context, dark: bool) -> Palette {
-    let p = if dark { Palette::DARK } else { Palette::LIGHT };
+pub fn apply_theme(ctx: &egui::Context, preset: ThemePreset, dark: bool) -> Palette {
+    let p = Palette::for_theme(preset, dark);
 
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = Vec2::new(Spacing::SM, Spacing::SM);

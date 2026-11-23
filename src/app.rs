@@ -13,7 +13,7 @@ use crate::export;
 use crate::focus::{FocusPreset, FocusTimer};
 use crate::model::{Priority, Recurrence, TaskDraft, TaskStore};
 use crate::nlp;
-use crate::theme::{apply_theme, Palette, Radius, Spacing};
+use crate::theme::{apply_theme, Palette, Radius, Spacing, ThemePreset};
 use crate::tour::{apply_step_view, render_tour_overlay, TourAnchors, TourOutcome};
 use crate::tray::{
     build_daily_notification_body, show_windows_toast, TrayAction, TrayController,
@@ -100,6 +100,7 @@ impl AgendaApp {
         updater.check_for_updates();
 
         let show_tour = !store.onboarding_completed;
+        let dark_mode = store.dark_mode;
         let app = Self {
             today,
             view_year: today.year,
@@ -141,7 +142,7 @@ impl AgendaApp {
             new_priority: Priority::Normal,
             search_query: String::new(),
             category_filter: None,
-            dark_mode: false,
+            dark_mode,
             status_error,
         };
         if let Some(t) = tray.as_mut() {
@@ -470,8 +471,50 @@ impl AgendaApp {
                     .on_hover_text("Cambiar tema claro / oscuro");
                 if theme_resp.clicked() {
                     self.dark_mode = !self.dark_mode;
+                    self.store.dark_mode = self.dark_mode;
+                    self.persist();
                 }
-                self.tour_anchors.theme_and_help = Some(help_resp.rect.union(theme_resp.rect));
+
+                let palette_label = format!("● {} ▾", self.store.theme_preset.label_es());
+                let palette_resp = ui.menu_button(
+                    RichText::new(palette_label)
+                        .size(12.0)
+                        .strong()
+                        .color(p.accent),
+                    |ui| {
+                        for preset in ThemePreset::ALL {
+                            let selected = self.store.theme_preset == preset;
+                            let dot_col = preset.accent_color(self.dark_mode);
+                            ui.horizontal(|ui| {
+                                let (dot_r, _) =
+                                    ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+                                ui.painter().circle_filled(dot_r.center(), 4.5, dot_col);
+                                let lbl = if selected {
+                                    format!("{} ✓", preset.label_es())
+                                } else {
+                                    preset.label_es().to_owned()
+                                };
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        RichText::new(lbl).size(12.5).color(p.ink_primary),
+                                    )
+                                    .clicked()
+                                {
+                                    self.store.theme_preset = preset;
+                                    self.persist();
+                                    ui.close_menu();
+                                }
+                            });
+                        }
+                    },
+                );
+                self.tour_anchors.theme_and_help = Some(
+                    help_resp
+                        .rect
+                        .union(theme_resp.rect)
+                        .union(palette_resp.response.rect),
+                );
 
                 let focus_label = if self.focus_mode {
                     "Salir de foco"
@@ -1232,6 +1275,7 @@ impl AgendaApp {
                             ("guia", "Ver guía interactiva de bienvenida"),
                             ("notificacion", "Mostrar notificación de hoy"),
                             ("tema", "Cambiar tema claro / oscuro"),
+                            ("paleta", "Siguiente paleta de colores"),
                             ("enfoque", "Iniciar / Salir de Modo Enfoque (F)"),
                             ("markdown", "Exportar semana a Markdown (.md)"),
                             ("ics", "Exportar agenda a iCalendar (.ics)"),
@@ -1276,7 +1320,20 @@ impl AgendaApp {
                                         self.today = Date::today();
                                         self.send_daily_notification_now();
                                     }
-                                    "tema" => self.dark_mode = !self.dark_mode,
+                                    "tema" => {
+                                        self.dark_mode = !self.dark_mode;
+                                        self.store.dark_mode = self.dark_mode;
+                                        self.persist();
+                                    }
+                                    "paleta" => {
+                                        let idx = ThemePreset::ALL
+                                            .iter()
+                                            .position(|p| *p == self.store.theme_preset)
+                                            .unwrap_or(0);
+                                        self.store.theme_preset =
+                                            ThemePreset::ALL[(idx + 1) % ThemePreset::ALL.len()];
+                                        self.persist();
+                                    }
                                     "enfoque" => self.focus_mode = !self.focus_mode,
                                     "markdown" => {
                                         let ws = self.selected_date.week_monday();
@@ -1751,7 +1808,7 @@ impl eframe::App for AgendaApp {
             // Repaint every 20s in idle so the live current-time line stays accurate without burning CPU
             ctx.request_repaint_after(Duration::from_secs(20));
         }
-        let p = apply_theme(ctx, self.dark_mode);
+        let p = apply_theme(ctx, self.store.theme_preset, self.dark_mode);
         self.handle_shortcuts(ctx);
 
         egui::TopBottomPanel::top("clarity_header")

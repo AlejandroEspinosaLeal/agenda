@@ -5,7 +5,7 @@
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-  ![Version](https://img.shields.io/badge/Version-1.1.10-4338CA)
+  ![Version](https://img.shields.io/badge/Version-1.2.0-4338CA)
 
   <p><strong>English</strong> | <a href="README.es.md">Español</a></p>
 </div>
@@ -26,8 +26,10 @@
   - Hides sidebars, centers the active block, and runs a configurable **Pomodoro (`25/5`) / Deep Work (`50/10`) / Remaining Block** timer alongside session notes (zero CPU when paused or idle).
 - **Real Export**:
   - Export weekly summaries to **Markdown (`.md`)**, plain text (`.txt`), or standard **iCalendar (`.ics` RFC 5545)** with `VCALENDAR`/`VEVENT`/`RRULE`.
+- **Custom Color Palettes & Light/Dark Mode**:
+  - 6 WCAG AA-compliant color palettes (**Índigo**, **Océano**, **Bosque**, **Terracota**, **Rosa**, **Lavanda**) with persisted Light/Dark mode preference.
 - **Interactive Onboarding Tour (`?`)**:
-  - First-launch spotlight walkthrough that automatically navigates across Monthly, Weekly, Daily, Backlog, `Ctrl+K`, Focus Mode, and Theme/Notifications (replayable anytime via `?`).
+  - First-launch spotlight walkthrough that automatically navigates across Monthly, Weekly, Daily, Backlog, `Ctrl+K`, Focus Mode, and Color Palettes/Notifications (replayable anytime via `?`).
 - **Windows Integration & Auto-Updater**:
   - **Daily Windows Toast Notification** once per day at launch/midnight with today's pending items (also triggerable from the tray menu or `Ctrl+K`).
   - **System Tray Icon** (`tray-icon`) with live pending badge, `--autostart` support, and **Inno Setup** installer (`Mi_Agenda_Setup.exe`).
