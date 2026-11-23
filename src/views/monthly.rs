@@ -193,6 +193,14 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     let drag_range = app
         .monthly_range_drag
         .map(|(a, b)| if a <= b { (a, b) } else { (b, a) });
+    let modal_range = (app.show_new_task_modal && app.new_span_days > 1).then(|| {
+        (
+            app.selected_date,
+            app.selected_date
+                .add_days(i64::from(app.new_span_days - 1)),
+        )
+    });
+    let active_range = drag_range.or(modal_range);
 
     for row in 0..rows {
         for col in 0..7 {
@@ -237,7 +245,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     app.monthly_range_drag = Some((start, cell_date));
                 }
             }
-            let in_drag_range = drag_range.is_some_and(|(s, e)| cell_date >= s && cell_date <= e);
+            let in_drag_range = active_range.is_some_and(|(s, e)| cell_date >= s && cell_date <= e);
             let plus_rect = egui::Rect::from_min_size(
                 egui::pos2(cell_rect.max.x - 24.0, cell_rect.min.y + 6.0),
                 Vec2::splat(18.0),
@@ -574,10 +582,17 @@ fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                             if ui
                                                 .add(
                                                     egui::Button::new(
-                                                        RichText::new("×").size(13.0).color(p.ink_muted),
+                                                        RichText::new("✕")
+                                                            .size(12.5)
+                                                            .strong()
+                                                            .color(p.priority_high),
                                                     )
-                                                    .frame(false),
+                                                    .fill(p.priority_high_bg)
+                                                    .stroke(Stroke::new(1.0_f32, p.priority_high))
+                                                    .rounding(Rounding::same(6.0))
+                                                    .min_size(Vec2::new(26.0, 24.0)),
                                                 )
+                                                .on_hover_text("Eliminar tarea")
                                                 .clicked()
                                             {
                                                 delete_target = Some((occ.start_date, task.id));

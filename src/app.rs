@@ -951,18 +951,78 @@ impl AgendaApp {
         let mut open = self.show_new_task_modal;
         let mut close_on_submit = false;
         let date = self.selected_date;
+        let end_date = date.add_days(i64::from(self.new_span_days.max(1) - 1));
+        let modal_title = if self.new_span_days > 1 {
+            if date.month == end_date.month {
+                format!(
+                    "Nueva Tarea · {} al {} de {} ({} días)",
+                    date.day,
+                    end_date.day,
+                    month_name_es(date.month),
+                    self.new_span_days
+                )
+            } else {
+                format!(
+                    "Nueva Tarea · {} {} al {} {} ({} días)",
+                    date.day,
+                    month_name_es(date.month),
+                    end_date.day,
+                    month_name_es(end_date.month),
+                    self.new_span_days
+                )
+            }
+        } else {
+            format!("Nueva Tarea · {} de {}", date.day, month_name_es(date.month))
+        };
 
-        egui::Window::new(format!(
-            "Nueva Tarea · {} de {}",
-            date.day,
-            month_name_es(date.month)
-        ))
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-        .default_width(380.0)
-        .show(ctx, |ui| {
+        egui::Window::new(modal_title)
+            .id(egui::Id::new("new_task_modal"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .default_width(380.0)
+            .show(ctx, |ui| {
+                if self.new_span_days > 1 {
+                    egui::Frame::none()
+                        .fill(p.accent_soft)
+                        .stroke(Stroke::new(1.0_f32, p.accent))
+                        .rounding(Rounding::same(Radius::SM))
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "Rango: {} {} → {} {} ({} días)",
+                                        date.day,
+                                        month_name_es(date.month),
+                                        end_date.day,
+                                        month_name_es(end_date.month),
+                                        self.new_span_days
+                                    ))
+                                    .size(12.0)
+                                    .strong()
+                                    .color(p.accent),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("Solo 1 día")
+                                                    .size(11.0)
+                                                    .color(p.ink_secondary),
+                                            )
+                                            .fill(p.bg_surface),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.new_span_days = 1;
+                                    }
+                                });
+                            });
+                        });
+                    ui.add_space(Spacing::XS);
+                }
             ui.label(
                 RichText::new("Título de la tarea")
                     .size(12.0)
@@ -1103,6 +1163,9 @@ impl AgendaApp {
         });
 
         self.show_new_task_modal = open && !close_on_submit;
+        if !self.show_new_task_modal {
+            self.new_span_days = 1;
+        }
     }
 
     fn render_command_palette(&mut self, ctx: &egui::Context, p: Palette) {
