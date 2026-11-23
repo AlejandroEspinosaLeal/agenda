@@ -1,7 +1,7 @@
 [Setup]
 AppId={{8E3C6B42-7A11-4F92-A9C4-2D8F110B55E1}
 AppName=Mi Agenda
-AppVersion=1.1.6
+AppVersion=1.1.7
 AppPublisher=Mi Agenda
 DefaultDirName={localappdata}\Programs\Mi Agenda
 DefaultGroupName=Mi Agenda
@@ -35,3 +35,12 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\Mi_Agenda.exe"; Description: "Abrir Mi Agenda ahora"; Flags: nowait postinstall
+
+[Code]
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM Mi_Agenda.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := True;
+end;
