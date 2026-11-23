@@ -23,7 +23,6 @@ pub enum UpdateStatus {
     Idle,
     Checking,
     UpToDate,
-    Available(ReleaseInfo),
     Downloading(String),
     Error(String),
 }
@@ -99,7 +98,8 @@ impl Updater {
 
         match msg {
             WorkerMsg::CheckDone(Ok(Some(info))) => {
-                self.status = UpdateStatus::Available(info);
+                // Auto-download as soon as a newer GitHub release is detected
+                self.start_download(info);
             }
             WorkerMsg::CheckDone(Ok(None)) => {
                 self.status = UpdateStatus::UpToDate;
@@ -121,7 +121,7 @@ impl Updater {
 /// Launches the downloaded Inno Setup installer silently and returns whether it started.
 pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     Command::new(path)
-        .arg("/SILENT")
+        .args(["/SILENT", "/CLOSEAPPLICATIONS"])
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("No se pudo iniciar el instalador: {e}"))

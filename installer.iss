@@ -14,6 +14,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
+CloseApplications=yes
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -33,4 +34,4 @@ Name: "{autodesktop}\Mi Agenda"; Filename: "{app}\Mi_Agenda.exe"; Tasks: desktop
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MiAgenda"; ValueData: """{app}\Mi_Agenda.exe"" --autostart"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-Filename: "{app}\Mi_Agenda.exe"; Description: "Abrir Mi Agenda ahora"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Mi_Agenda.exe"; Description: "Abrir Mi Agenda ahora"; Flags: nowait postinstall
