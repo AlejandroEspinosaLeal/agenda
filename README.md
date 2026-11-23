@@ -1,110 +1,112 @@
 <div align="center">
   <img src="assets/icon.ico" width="64" height="64" alt="Mi Agenda Logo" />
   <h1>Mi Agenda</h1>
-  <p><strong>Aplicación de escritorio en Rust para planificación personal, calendario mensual, agenda diaria y vista semanal.</strong></p>
+  <p><strong>A lightweight Rust desktop application for personal planning, monthly calendar, daily schedule, and weekly overview.</strong></p>
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
   ![Version](https://img.shields.io/badge/Version-1.0.0-4338CA)
+
+  <p><strong>English</strong> | <a href="README.es.md">Español</a></p>
 </div>
 
 ---
 
-## Características principales
+## Key Features
 
-- **Tres vistas de planificación**:
-  - **Calendario Mensual**: cuadrícula de 7 columnas con navegación por mes, filtros por categoría, indicador de día actual (`HOY`), botón rápido `+` por celda, doble clic para abrir la agenda del día y panel lateral de detalle (`DETALLE DEL DÍA` y `Agregar Rápido`).
-  - **Agenda Diaria**: cronograma ordenado por hora con banda lateral de color, línea dinámica de hora actual (`ACTUAL`), progreso de tareas, tarjeta de bienestar (`Ritmo del día`) y notas rápidas con guardado automático.
-  - **Vista Semanal**: tablero de 7 columnas (`LUN`–`DOM`) con tarjetas por día, distribución por categorías, bloque editable `Intención de la Semana`, balance de carga y exportación de resumen (`Semana_N_Resumen.txt` en el Escritorio).
-- **Tareas flexibles y colores**:
-  - Duración de **1 día**, **3 días**, **1 semana** (`7 días`) o personalizada (`1–14 días`).
-  - Categorías (`Trabajo`, `Personal`, `Estudio`, `Salud`), prioridades (`Baja`, `Media`, `Alta`) y selector de color RGB personalizado.
-- **Modo Claro y Modo Oscuro accesibles**: tema claro editorial (`#F8F9FC` / `#FFFFFF` / índigo `#4338CA`) y tema oscuro de alto contraste, además de **Modo Enfoque** (`En foco`) y búsqueda global (`Ctrl+K` / `Ctrl+F`, limpiar con `Esc`).
-- **Integración con Windows**:
-  - **Icono en la bandeja del sistema** (`tray-icon`) con insignia numérica de tareas pendientes hoy y resumen al pasar el cursor.
-  - **Mini-Calendario flotante** (`Mini`) y **píldora flotante** (`224×34 px`) arrastrable junto a la barra de tareas.
-  - **Inicio automático** con Windows mediante `--autostart` e instalador **Inno Setup** (`Mi_Agenda_Setup.exe`).
-- **Persistencia local protegida**: los datos se guardan automáticamente en `%LOCALAPPDATA%\organizador_tareas\tareas.dat` en formato binario (`OTSK`), sin exponer archivos JSON en el Escritorio.
-- **Auto-actualizador integrado**: comprueba nuevas versiones en [GitHub Releases](https://github.com/AlejandroEspinosaLeal/agenda/releases), descarga `Mi_Agenda_Setup.exe` y actualiza de forma silenciosa (`/SILENT`) conservando intactos tus datos en `tareas.dat`.
+- **Three Planning Views**:
+  - **Monthly Calendar (`Calendario Mensual`)**: 7-column grid with month navigation, category filters, today highlight (`HOY`), quick `+` button per cell, double-click to open the day's schedule, and right-hand detail & quick-add inspector.
+  - **Daily Schedule (`Agenda Diaria`)**: chronological timeline with color-coded side strips, dynamic current-time indicator (`ACTUAL`), task progress bar, daily rhythm summary, and auto-saved quick notes.
+  - **Weekly View (`Vista Semanal`)**: 7-column weekly board (`LUN`–`DOM`) with per-day task cards, category breakdown, editable `Intención de la Semana` note, workload balance, and summary export (`Semana_N_Resumen.txt` on the Desktop).
+- **Flexible Tasks & Custom Colors**:
+  - Task durations of **1 day**, **3 days**, **1 week** (`7 days`), or custom (`1–14 days`).
+  - Categories (`Trabajo`, `Personal`, `Estudio`, `Salud`), priorities (`Baja`, `Media`, `Alta`), and a custom RGB color picker.
+- **Accessible Light & Dark Themes**: editorial light palette (`#F8F9FC` / `#FFFFFF` / indigo `#4338CA`) and high-contrast dark palette, plus **Focus Mode** (`En foco`) and global search (`Ctrl+K` / `Ctrl+F`, clear with `Esc`).
+- **Windows Integration**:
+  - **System Tray Icon** (`tray-icon`) with a live numeric badge for today's pending tasks and hover tooltip summary.
+  - **Floating Mini-Calendar** (`Mini`) and **draggable taskbar pill widget** (`224×34 px`) positioned near the notification area.
+  - **Windows Auto-Start** via `--autostart` and **Inno Setup** installer (`Mi_Agenda_Setup.exe`).
+- **Protected Local Persistence**: data is automatically saved to `%LOCALAPPDATA%\organizador_tareas\tareas.dat` in an obfuscated binary format (`OTSK`), keeping the Desktop clean of JSON files.
+- **Built-in Auto-Updater**: checks [GitHub Releases](https://github.com/AlejandroEspinosaLeal/agenda/releases), downloads `Mi_Agenda_Setup.exe`, and runs a silent update (`/SILENT`) while preserving all user data in `tareas.dat`.
 
 > [!NOTE]
-> El actualizador solo reemplaza el binario en `%LOCALAPPDATA%\Programs\Mi Agenda\Mi_Agenda.exe`. Tus tareas, notas diarias e intenciones semanales permanecen en `%LOCALAPPDATA%\organizador_tareas\tareas.dat`.
+> The updater only replaces the application binary at `%LOCALAPPDATA%\Programs\Mi Agenda\Mi_Agenda.exe`. Your tasks, daily notes, and weekly intentions remain untouched in `%LOCALAPPDATA%\organizador_tareas\tareas.dat`.
 
 ---
 
-## Instalación (Windows)
+## Installation (Windows)
 
-1. Descarga **`Mi_Agenda_Setup.exe`** desde la última versión en [Releases](https://github.com/AlejandroEspinosaLeal/agenda/releases).
-2. Ejecuta el instalador (no requiere permisos de administrador).
-3. Opcionalmente deja marcada la casilla **Iniciar automáticamente con Windows** para tener el icono en la bandeja y la píldora de tareas siempre disponibles.
+1. Download **`Mi_Agenda_Setup.exe`** from the latest [Releases](https://github.com/AlejandroEspinosaLeal/agenda/releases).
+2. Run the installer (no administrator privileges required).
+3. Optionally keep **Iniciar automáticamente con Windows** checked so the tray icon and taskbar pill launch automatically on login.
 
 ---
 
-## Compilación desde el código fuente
+## Building from Source
 
-### Requisitos
+### Prerequisites
 
-- [Rust](https://www.rust-lang.org/) (`cargo` y `rustc`, edición 2021)
-- *(Opcional)* [UPX](https://upx.github.io/) para comprimir el ejecutable final
-- *(Opcional)* [Inno Setup 6](https://jrsoftware.org/isinfo.php) para generar el instalador `Mi_Agenda_Setup.exe`
+- [Rust](https://www.rust-lang.org/) (`cargo` and `rustc`, 2021 edition)
+- *(Optional)* [UPX](https://upx.github.io/) for executable compression
+- *(Optional)* [Inno Setup 6](https://jrsoftware.org/isinfo.php) to build `Mi_Agenda_Setup.exe`
 
-### Comandos
+### Commands
 
 ```powershell
-# Ejecutar tests unitarios
+# Run unit tests
 cargo test
 
-# Verificar calidad y lints
+# Run linter with warnings as errors
 cargo clippy --all-targets -- -D warnings
 
-# Compilar binario optimizado por tamaño (LTO + opt-level = "z" + strip)
+# Build size-optimized release binary (LTO + opt-level = "z" + strip)
 cargo build --release
 ```
 
-El ejecutable optimizado se genera en `target\release\organizador_tareas.exe`. Para comprimirlo y empaquetar el instalador:
+The compiled executable is output to `target\release\organizador_tareas.exe`. To compress it and package the installer:
 
 ```powershell
-# Comprimir con UPX (opcional)
+# Compress with UPX (optional)
 upx --best --lzma target\release\organizador_tareas.exe
 
-# Generar instalador en target\installer\Mi_Agenda_Setup.exe
+# Build installer at target\installer\Mi_Agenda_Setup.exe
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
 ---
 
-## Estructura del proyecto
+## Project Structure
 
 ```text
 organizador_tareas/
 ├── assets/
-│   └── icon.ico          # Icono multi-resolución de la aplicación (16..256 px)
+│   └── icon.ico          # Multi-resolution application icon (16..256 px)
 ├── src/
-│   ├── main.rs           # Punto de entrada y soporte de flag --autostart
-│   ├── app.rs            # Estado principal, barra superior, sidebar, modal y píldora flotante
-│   ├── calendar.rs       # Lógica de calendario civil, semanas ISO y aritmética de fechas
-│   ├── model.rs          # Modelo Task/TaskStore y persistencia binaria OTSK
-│   ├── theme.rs          # Paletas Clarity Suite (claro) y oscuro accesible + fuente Segoe UI
-│   ├── tray.rs           # Icono de bandeja de Windows, insignia numérica y menú contextual
-│   ├── updater.rs        # Comprobación y descarga de actualizaciones desde GitHub Releases
+│   ├── main.rs           # Entry point and --autostart flag handling
+│   ├── app.rs            # Main app state, top bar, sidebar, modal, and taskbar pill
+│   ├── calendar.rs       # Civil calendar math, ISO weeks, and date arithmetic
+│   ├── model.rs          # Task/TaskStore data model and OTSK binary persistence
+│   ├── theme.rs          # Clarity Suite light & accessible dark palettes + Segoe UI
+│   ├── tray.rs           # Windows system tray icon, numeric badge, and context menu
+│   ├── updater.rs        # GitHub Releases update checker and silent installer runner
 │   └── views/
-│       ├── mod.rs        # Helpers visuales compartidos y filtros de categoría
-│       ├── monthly.rs    # Vista Calendario Mensual
-│       ├── daily.rs      # Vista Agenda Diaria
-│       ├── weekly.rs     # Vista Semanal
-│       └── mini.rs       # Vista Mini-Calendario flotante
-├── build.rs              # Incrustación de icon.ico en Windows mediante winresource
-├── Cargo.toml            # Dependencias (eframe, serde, serde_json, tray-icon) y perfil release
-└── installer.iss         # Script de Inno Setup 6 para Mi_Agenda_Setup.exe
+│       ├── mod.rs        # Shared UI helpers and category filters
+│       ├── monthly.rs    # Monthly Calendar view
+│       ├── daily.rs      # Daily Schedule view
+│       ├── weekly.rs     # Weekly Overview view
+│       └── mini.rs       # Floating Mini-Calendar view
+├── build.rs              # Embeds icon.ico into Windows binary via winresource
+├── Cargo.toml            # Dependencies (eframe, serde, serde_json, tray-icon) & release profile
+└── installer.iss         # Inno Setup 6 script for Mi_Agenda_Setup.exe
 ```
 
 ---
 
-## Atajos de teclado
+## Keyboard Shortcuts
 
-| Atajo | Acción |
+| Shortcut | Action |
 | --- | --- |
-| `Ctrl + K` / `Ctrl + F` | Enfocar el buscador global |
-| `Esc` | Cerrar modal o limpiar búsqueda |
-| `←` / `→` | Mes, día o semana anterior / siguiente (según la vista activa) |
-| `Enter` | Guardar tarea desde el campo de título |
+| `Ctrl + K` / `Ctrl + F` | Focus global search |
+| `Esc` | Close modal or clear search |
+| `←` / `→` | Previous / next month, day, or week (depending on active view) |
+| `Enter` | Save task from title input |
