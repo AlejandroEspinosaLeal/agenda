@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 use eframe::egui::{
-    self, Align, Color32, Key, Layout, Pos2, RichText, Rounding, Sense, Stroke, Vec2, WindowLevel,
+    self, Align, Color32, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2,
 };
 
 use crate::calendar::{
@@ -43,7 +43,6 @@ pub struct AgendaApp {
     pub selected_date: Date,
     pub active_view: ActiveView,
     pub focus_mode: bool,
-    pub mini_mode: bool,
     pub daily_24h: bool,
     pub weekly_schedule_mode: bool,
     pub weekly_footer_open: bool,
@@ -84,7 +83,7 @@ pub struct AgendaApp {
 }
 
 impl AgendaApp {
-    pub fn new(start_in_tray: bool) -> Self {
+    pub fn new() -> Self {
         let today = Date::today();
         let storage_path = TaskStore::default_storage_path();
         let (store, status_error) = match TaskStore::load(&storage_path) {
@@ -107,7 +106,6 @@ impl AgendaApp {
             selected_date: today,
             active_view: ActiveView::Monthly,
             focus_mode: false,
-            mini_mode: start_in_tray,
             daily_24h: false,
             weekly_schedule_mode: false,
             weekly_footer_open: true,
@@ -243,38 +241,14 @@ impl AgendaApp {
         self.selected_date = date;
     }
 
-    pub fn set_mini_mode(&mut self, ctx: &egui::Context, mini: bool) {
-        self.mini_mode = mini;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        if mini {
-            let size = Vec2::new(360.0, 520.0);
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(WindowLevel::AlwaysOnTop));
-            if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
-                let x = (mon.x - size.x - 16.0).max(0.0);
-                let y = (mon.y - size.y - 68.0).max(0.0);
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(x, y)));
-            }
-        } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(WindowLevel::Normal));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1360.0, 840.0)));
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(80.0, 40.0)));
-        }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-    }
-
     fn poll_tray(&mut self, ctx: &egui::Context) {
         let Some(action) = self.tray.as_ref().and_then(TrayController::poll_action) else {
             return;
         };
         match action {
-            TrayAction::OpenMini => {
-                self.today = Date::today();
-                self.select_date(self.today);
-                self.set_mini_mode(ctx, true);
-            }
             TrayAction::OpenFull => {
-                self.set_mini_mode(ctx, false);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
             TrayAction::NotifyToday => {
                 self.today = Date::today();
@@ -529,24 +503,6 @@ impl AgendaApp {
                 self.tour_anchors.focus_mode = Some(focus_resp.rect);
                 if focus_resp.clicked() {
                     self.focus_mode = !self.focus_mode;
-                }
-
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new("Mini")
-                                .size(12.5)
-                                .strong()
-                                .color(p.ink_primary),
-                        )
-                        .fill(p.bg_elevated)
-                        .stroke(Stroke::new(1.0_f32, p.border))
-                        .min_size(Vec2::new(56.0, 34.0)),
-                    )
-                    .on_hover_text("Cambiar a Mini-Calendario junto al reloj")
-                    .clicked()
-                {
-                    self.set_mini_mode(ui.ctx(), true);
                 }
 
                 if ui
@@ -1786,19 +1742,6 @@ impl eframe::App for AgendaApp {
         }
         let p = apply_theme(ctx, self.dark_mode);
         self.handle_shortcuts(ctx);
-
-        if self.mini_mode {
-            egui::CentralPanel::default()
-                .frame(
-                    egui::Frame::none()
-                        .fill(p.bg_canvas)
-                        .inner_margin(egui::Margin::symmetric(12.0, 12.0)),
-                )
-                .show(ctx, |ui| {
-                    views::mini::render(self, ctx, ui, p);
-                });
-            return;
-        }
 
         egui::TopBottomPanel::top("clarity_header")
             .frame(

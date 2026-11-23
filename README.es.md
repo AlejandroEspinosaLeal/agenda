@@ -5,7 +5,7 @@
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-  ![Version](https://img.shields.io/badge/Version-1.1.8-4338CA)
+  ![Version](https://img.shields.io/badge/Version-1.1.9-4338CA)
 
   <p><a href="README.md">English</a> | <strong>Español</strong></p>
 </div>
@@ -30,7 +30,7 @@
   - Tour con spotlight en el primer uso que recorre automáticamente Mensual, Semanal, Diaria, Backlog, `Ctrl+K`, Modo Enfoque y Tema/Notificaciones (repetible en cualquier momento desde el botón `?`).
 - **Integración con Windows y Auto-actualizador**:
   - **Notificación diaria nativa en Windows** una vez al día al iniciar o cambiar de día con tus pendientes (también disponible desde la bandeja o `Ctrl+K`).
-  - **Icono en la bandeja del sistema** (`tray-icon`) con insignia numérica, **Mini-Calendario flotante** (`Mini`), `--autostart` e instalador **Inno Setup** (`Mi_Agenda_Setup.exe`).
+  - **Icono en la bandeja del sistema** (`tray-icon`) con insignia numérica, `--autostart` e instalador **Inno Setup** (`Mi_Agenda_Setup.exe`).
   - **Actualización automática desde GitHub Releases**: al detectar una versión nueva en `releases/latest`, descarga `Mi_Agenda_Setup.exe`, instala en silencio (`/SILENT /CLOSEAPPLICATIONS`) y reabre la app manteniendo intactos tus datos en `%LOCALAPPDATA%\organizador_tareas\tareas.dat` (`OTSK` v2 con migración automática desde v1).
 
 ---
@@ -83,8 +83,7 @@ organizador_tareas/
 │       ├── mod.rs        # Helpers visuales compartidos y filtros de categoría
 │       ├── monthly.rs    # Vista Calendario Mensual con arrastre multi-día e inspector
 │       ├── daily.rs      # Vista Agenda Diaria con rejilla horaria
-│       ├── weekly.rs     # Vista Semanal dual (Horario / Tablero)
-│       └── mini.rs       # Vista Mini-Calendario flotante
+│       └── weekly.rs     # Vista Semanal dual (Horario / Tablero)
 ├── build.rs              # Incrustación de icon.ico en Windows mediante winresource
 ├── Cargo.toml            # Dependencias (chrono, eframe, serde, serde_json, tray-icon)
 └── installer.iss         # Script de Inno Setup 6 para Mi_Agenda_Setup.exe

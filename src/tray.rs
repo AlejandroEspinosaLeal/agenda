@@ -9,7 +9,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Actions triggered by clicking the system tray icon or its context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
-    OpenMini,
     OpenFull,
     NotifyToday,
     Quit,
@@ -18,7 +17,6 @@ pub enum TrayAction {
 /// Holds the Windows system tray icon and its menu item IDs.
 pub struct TrayController {
     tray: TrayIcon,
-    id_mini: tray_icon::menu::MenuId,
     id_full: tray_icon::menu::MenuId,
     id_notify: tray_icon::menu::MenuId,
     id_quit: tray_icon::menu::MenuId,
@@ -30,17 +28,14 @@ impl TrayController {
     /// Creates the system tray icon next to the Windows clock.
     pub fn new() -> Result<Self, String> {
         let menu = Menu::new();
-        let item_mini = MenuItem::new("Mini-Calendario (junto al reloj)", true, None);
-        let item_full = MenuItem::new("Abrir Mi Agenda (Completa)", true, None);
+        let item_full = MenuItem::new("Abrir Mi Agenda", true, None);
         let item_notify = MenuItem::new("Notificación de hoy", true, None);
         let item_quit = MenuItem::new("Salir", true, None);
 
-        let id_mini = item_mini.id().clone();
         let id_full = item_full.id().clone();
         let id_notify = item_notify.id().clone();
         let id_quit = item_quit.id().clone();
 
-        menu.append(&item_mini).map_err(|e| e.to_string())?;
         menu.append(&item_full).map_err(|e| e.to_string())?;
         menu.append(&item_notify).map_err(|e| e.to_string())?;
         menu.append(&item_quit).map_err(|e| e.to_string())?;
@@ -58,7 +53,6 @@ impl TrayController {
 
         Ok(Self {
             tray,
-            id_mini,
             id_full,
             id_notify,
             id_quit,
@@ -95,14 +89,11 @@ impl TrayController {
                 ..
             } = event
             {
-                return Some(TrayAction::OpenMini);
+                return Some(TrayAction::OpenFull);
             }
         }
 
         while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == self.id_mini {
-                return Some(TrayAction::OpenMini);
-            }
             if event.id == self.id_full {
                 return Some(TrayAction::OpenFull);
             }

@@ -1,5 +1,4 @@
 pub mod daily;
-pub mod mini;
 pub mod monthly;
 pub mod weekly;
 

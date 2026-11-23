@@ -5,7 +5,7 @@
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-  ![Version](https://img.shields.io/badge/Version-1.1.8-4338CA)
+  ![Version](https://img.shields.io/badge/Version-1.1.9-4338CA)
 
   <p><strong>English</strong> | <a href="README.es.md">Español</a></p>
 </div>
@@ -30,7 +30,7 @@
   - First-launch spotlight walkthrough that automatically navigates across Monthly, Weekly, Daily, Backlog, `Ctrl+K`, Focus Mode, and Theme/Notifications (replayable anytime via `?`).
 - **Windows Integration & Auto-Updater**:
   - **Daily Windows Toast Notification** once per day at launch/midnight with today's pending items (also triggerable from the tray menu or `Ctrl+K`).
-  - **System Tray Icon** (`tray-icon`) with live pending badge, **Floating Mini-Calendar** (`Mini`), `--autostart` support, and **Inno Setup** installer (`Mi_Agenda_Setup.exe`).
+  - **System Tray Icon** (`tray-icon`) with live pending badge, `--autostart` support, and **Inno Setup** installer (`Mi_Agenda_Setup.exe`).
   - **Automatic GitHub Releases Updater**: checks `releases/latest`, automatically downloads `Mi_Agenda_Setup.exe`, installs silently (`/SILENT /CLOSEAPPLICATIONS`), and relaunches while preserving `%LOCALAPPDATA%\organizador_tareas\tareas.dat` (`OTSK` v2 with automatic v1 migration).
 
 ---
@@ -83,8 +83,7 @@ organizador_tareas/
 │       ├── mod.rs        # Shared UI helpers and unified category filter bar
 │       ├── monthly.rs    # Monthly view with multi-day drag and inspector
 │       ├── daily.rs      # Daily time-blocking grid view
-│       ├── weekly.rs     # Dual Schedule/Board weekly view
-│       └── mini.rs       # Floating Mini-Calendar view
+│       └── weekly.rs     # Dual Schedule/Board weekly view
 ├── build.rs              # Embeds icon.ico into Windows binary via winresource
 ├── Cargo.toml            # Dependencies (chrono, eframe, serde, serde_json, tray-icon)
 └── installer.iss         # Inno Setup 6 script for Mi_Agenda_Setup.exe
