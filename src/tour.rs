@@ -1,5 +1,6 @@
 use eframe::egui::{self, Color32, Key, Order, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
 
+use crate::app::ActiveView;
 use crate::theme::{Palette, Radius};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,42 +15,70 @@ pub enum TourTarget {
 
 pub struct TourStep {
     pub target: TourTarget,
+    pub view: Option<ActiveView>,
     pub title: &'static str,
     pub body: &'static str,
 }
 
-pub const TOUR_STEPS: [TourStep; 6] = [
+pub const TOUR_STEPS: [TourStep; 8] = [
     TourStep {
         target: TourTarget::CalendarArea,
-        title: "1. Tu calendario interactivo",
-        body: "En Mensual, arrastra sobre varios días seguidos para crear una tarea multi-día. En Diaria o Semanal, arrastra sobre las horas para crear, mover o estirar bloques.",
+        view: Some(ActiveView::Monthly),
+        title: "1. Calendario Mensual y rango multi-día",
+        body: "Haz clic en un día para ver su panel lateral, doble clic para abrirlo en Diaria, o arrastra sobre varios días seguidos para crear una tarea multi-día.",
+    },
+    TourStep {
+        target: TourTarget::CalendarArea,
+        view: Some(ActiveView::Weekly),
+        title: "2. Vista Semanal (Horario y Tablero)",
+        body: "Alterna arriba entre Modo Horario y Tablero. En Modo Horario puedes arrastrar para crear bloques, mover tareas entre días y estirar su duración desde el borde inferior.",
+    },
+    TourStep {
+        target: TourTarget::CalendarArea,
+        view: Some(ActiveView::Daily),
+        title: "3. Agenda Diaria y Time-Blocking",
+        body: "Organiza tu día hora a hora (06:00–23:00 o 24h) con línea de hora actual en vivo y columnas paralelas automáticas si se solapan bloques.",
     },
     TourStep {
         target: TourTarget::ViewsNav,
-        title: "2. Cambia de vista al instante",
-        body: "Alterna entre Mensual (M), Semanal (W) con modo horario/tablero, y Diaria (D) con rejilla de horas y línea de hora actual.",
+        view: None,
+        title: "4. Cambio rápido de vistas",
+        body: "Usa estos botones o los atajos de teclado M (Mensual), W (Semanal), D (Diaria) y T (Hoy) para moverte al instante.",
     },
     TourStep {
         target: TourTarget::Backlog,
-        title: "3. Bandeja de pendientes (Backlog)",
-        body: "Guarda aquí tareas sin hora fija. Cuando quieras hacerlas, arrástralas directamente desde la barra lateral hasta una hora del calendario.",
+        view: Some(ActiveView::Daily),
+        title: "5. Bandeja Sin Programar (Backlog)",
+        body: "Anota aquí tareas sin hora fija y arrástralas directamente sobre la rejilla horaria de Diaria o Semanal para programarlas.",
     },
     TourStep {
         target: TourTarget::CommandPalette,
-        title: "4. Paleta rápida (Ctrl+K)",
-        body: "Pulsa Ctrl+K para buscar cualquier tarea o nota, ejecutar comandos o crear bloques escribiendo natural: \"Estudiar Rust 18:00-19:30 #Estudio\".",
+        view: None,
+        title: "6. Paleta rápida (Ctrl+K)",
+        body: "Pulsa Ctrl+K para buscar tareas o notas, ejecutar comandos o crear bloques con lenguaje natural (ej. \"Estudiar Rust 18:00-19:30 #Estudio\").",
     },
     TourStep {
         target: TourTarget::FocusMode,
-        title: "5. Modo Enfoque y Pomodoro",
-        body: "Activa el Modo Enfoque (tecla F) para ocultar distracciones, centrar tu bloque actual y usar el temporizador 25/5 o 50/10 con notas.",
+        view: None,
+        title: "7. Modo Enfoque y Pomodoro (F)",
+        body: "Pulsa En foco (o F) para ocultar distracciones, centrar tu bloque actual y usar el temporizador 25/5, 50/10 o tiempo restante del bloque.",
     },
     TourStep {
         target: TourTarget::ThemeAndHelp,
-        title: "6. Tema, notificaciones y ayuda",
-        body: "Cambia entre modo claro/oscuro, recibe una notificación diaria en Windows con tus pendientes del día y vuelve a abrir esta guía cuando quieras desde el botón \"?\".",
+        view: Some(ActiveView::Monthly),
+        title: "8. Tema, notificaciones y ayuda (?)",
+        body: "Cambia entre modo claro/oscuro, recibe una notificación diaria en Windows con tus pendientes y repite esta guía cuando quieras con el botón \"?\".",
     },
 ];
+
+pub fn apply_step_view(step_idx: usize, active_view: &mut ActiveView, focus_mode: &mut bool) {
+    *focus_mode = false;
+    if let Some(step) = TOUR_STEPS.get(step_idx) {
+        if let Some(v) = step.view {
+            *active_view = v;
+        }
+    }
+}
 
 /// Lightweight UI bounding boxes captured during layout for spotlighting.
 #[derive(Default, Clone, Copy)]

@@ -1940,7 +1940,7 @@ dependencies = [
 
 [[package]]
 name = "organizador_tareas"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "chrono",
  "eframe",

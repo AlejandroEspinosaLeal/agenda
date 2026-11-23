@@ -14,7 +14,7 @@ use crate::focus::{FocusPreset, FocusTimer};
 use crate::model::{Priority, Recurrence, TaskDraft, TaskStore};
 use crate::nlp;
 use crate::theme::{apply_theme, Palette, Radius, Spacing};
-use crate::tour::{render_tour_overlay, TourAnchors, TourOutcome};
+use crate::tour::{apply_step_view, render_tour_overlay, TourAnchors, TourOutcome};
 use crate::tray::{
     build_daily_notification_body, show_windows_toast, TrayAction, TrayController,
 };
@@ -1789,15 +1789,18 @@ impl eframe::App for AgendaApp {
         self.render_new_task_modal(ctx, p);
         self.render_command_palette(ctx, p);
 
-        if self.show_tour
-            && matches!(
+        if self.show_tour {
+            apply_step_view(self.tour_step, &mut self.active_view, &mut self.focus_mode);
+            if matches!(
                 render_tour_overlay(ctx, p, &mut self.tour_step, &self.tour_anchors),
                 TourOutcome::CompletedOrSkipped
-            )
-        {
-            self.show_tour = false;
-            self.store.onboarding_completed = true;
-            self.persist();
+            ) {
+                self.show_tour = false;
+                self.store.onboarding_completed = true;
+                self.persist();
+            } else {
+                apply_step_view(self.tour_step, &mut self.active_view, &mut self.focus_mode);
+            }
         }
 
         if let Some(drag_id) = self.drag_backlog_id {
