@@ -121,7 +121,7 @@ impl Updater {
 /// Launches the downloaded Inno Setup installer silently and returns whether it started.
 pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     Command::new(path)
-        .args(["/SILENT", "/CLOSEAPPLICATIONS"])
+        .args(["/SILENT", "/FORCECLOSEAPPLICATIONS"])
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("No se pudo iniciar el instalador: {e}"))

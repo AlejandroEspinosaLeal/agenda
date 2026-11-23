@@ -1,7 +1,7 @@
 [Setup]
 AppId={{8E3C6B42-7A11-4F92-A9C4-2D8F110B55E1}
 AppName=Mi Agenda
-AppVersion=1.1.5
+AppVersion=1.1.6
 AppPublisher=Mi Agenda
 DefaultDirName={localappdata}\Programs\Mi Agenda
 DefaultGroupName=Mi Agenda
@@ -14,7 +14,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
-CloseApplications=yes
+CloseApplications=force
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
