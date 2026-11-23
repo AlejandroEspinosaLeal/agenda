@@ -272,6 +272,8 @@ pub struct TaskStore {
     pub weekly_intentions: BTreeMap<String, String>,
     #[serde(default)]
     pub last_notified_date: Option<String>,
+    #[serde(default)]
+    pub onboarding_completed: bool,
 }
 
 const fn default_next_id() -> u64 {
@@ -287,6 +289,7 @@ impl Default for TaskStore {
             daily_notes: BTreeMap::new(),
             weekly_intentions: BTreeMap::new(),
             last_notified_date: None,
+            onboarding_completed: false,
         }
     }
 }
@@ -657,6 +660,7 @@ fn parse_any_store_json(raw: &[u8]) -> io::Result<TaskStore> {
         daily_notes: legacy.daily_notes,
         weekly_intentions: legacy.weekly_intentions,
         last_notified_date: None,
+        onboarding_completed: false,
     })
 }
 

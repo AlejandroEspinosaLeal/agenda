@@ -14,6 +14,7 @@ use crate::focus::{FocusPreset, FocusTimer};
 use crate::model::{Priority, Recurrence, TaskDraft, TaskStore};
 use crate::nlp;
 use crate::theme::{apply_theme, Palette, Radius, Spacing};
+use crate::tour::{render_tour_overlay, TourAnchors, TourOutcome};
 use crate::tray::{
     build_daily_notification_body, show_windows_toast, TrayAction, TrayController,
 };
@@ -54,6 +55,9 @@ pub struct AgendaApp {
     pub show_new_task_modal: bool,
     pub show_command_palette: bool,
     pub palette_query: String,
+    pub show_tour: bool,
+    pub tour_step: usize,
+    pub tour_anchors: TourAnchors,
     pub focus_timer: FocusTimer,
     pub tray: Option<TrayController>,
     pub updater: Updater,
@@ -95,6 +99,7 @@ impl AgendaApp {
         let mut updater = Updater::new();
         updater.check_for_updates();
 
+        let show_tour = !store.onboarding_completed;
         let app = Self {
             today,
             view_year: today.year,
@@ -114,6 +119,9 @@ impl AgendaApp {
             show_new_task_modal: false,
             show_command_palette: false,
             palette_query: String::new(),
+            show_tour,
+            tour_step: 0,
+            tour_anchors: TourAnchors::default(),
             focus_timer: FocusTimer::new(),
             tray: None,
             updater,
@@ -465,7 +473,7 @@ impl AgendaApp {
                 return;
             }
         }
-        if ctx.wants_keyboard_input() || self.show_command_palette {
+        if ctx.wants_keyboard_input() || self.show_command_palette || self.show_tour {
             return;
         }
 
@@ -534,7 +542,7 @@ impl AgendaApp {
                 search_resp.request_focus();
             }
 
-            if ui
+            let cmd_resp = ui
                 .add(
                     egui::Button::new(
                         RichText::new("Ctrl+K")
@@ -546,9 +554,9 @@ impl AgendaApp {
                     .stroke(Stroke::new(1.0_f32, p.border))
                     .min_size(Vec2::new(62.0, 34.0)),
                 )
-                .on_hover_text("Abrir paleta de comandos y entrada rápida (Ctrl+K)")
-                .clicked()
-            {
+                .on_hover_text("Abrir paleta de comandos y entrada rápida (Ctrl+K)");
+            self.tour_anchors.command_palette = Some(cmd_resp.rect);
+            if cmd_resp.clicked() {
                 self.show_command_palette = !self.show_command_palette;
                 self.palette_query.clear();
             }
@@ -568,8 +576,26 @@ impl AgendaApp {
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let help_resp = ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("?")
+                                .size(13.0)
+                                .strong()
+                                .color(p.ink_primary),
+                        )
+                        .fill(p.bg_elevated)
+                        .stroke(Stroke::new(1.0_f32, p.border))
+                        .min_size(Vec2::new(32.0, 34.0)),
+                    )
+                    .on_hover_text("Ver guía interactiva de bienvenida");
+                if help_resp.clicked() {
+                    self.tour_step = 0;
+                    self.show_tour = true;
+                }
+
                 let theme_label = if self.dark_mode { "Claro" } else { "Oscuro" };
-                if ui
+                let theme_resp = ui
                     .add(
                         egui::Button::new(
                             RichText::new(theme_label)
@@ -581,18 +607,18 @@ impl AgendaApp {
                         .stroke(Stroke::new(1.0_f32, p.border))
                         .min_size(Vec2::new(72.0, 34.0)),
                     )
-                    .on_hover_text("Cambiar tema claro / oscuro")
-                    .clicked()
-                {
+                    .on_hover_text("Cambiar tema claro / oscuro");
+                if theme_resp.clicked() {
                     self.dark_mode = !self.dark_mode;
                 }
+                self.tour_anchors.theme_and_help = Some(help_resp.rect.union(theme_resp.rect));
 
                 let focus_label = if self.focus_mode {
                     "Salir de foco"
                 } else {
                     "En foco"
                 };
-                if ui
+                let focus_resp = ui
                     .add(
                         egui::Button::new(
                             RichText::new(focus_label)
@@ -615,9 +641,9 @@ impl AgendaApp {
                         ))
                         .min_size(Vec2::new(86.0, 34.0)),
                     )
-                    .on_hover_text("Oculta barras laterales para concentrarte")
-                    .clicked()
-                {
+                    .on_hover_text("Oculta barras laterales para concentrarte");
+                self.tour_anchors.focus_mode = Some(focus_resp.rect);
+                if focus_resp.clicked() {
                     self.focus_mode = !self.focus_mode;
                 }
 
@@ -667,37 +693,40 @@ impl AgendaApp {
     fn render_sidebar(&mut self, ui: &mut egui::Ui, p: Palette) {
         ui.vertical(|ui| {
             // a) Navegación de vistas
-            ui.label(
-                RichText::new("PLANIFICACIÓN")
-                    .size(10.5)
-                    .strong()
-                    .color(p.ink_muted),
-            );
-            ui.add_space(Spacing::XS);
-
-            let items = [
-                (ActiveView::Monthly, "Calendario Mensual"),
-                (ActiveView::Weekly, "Vista Semanal"),
-                (ActiveView::Daily, "Agenda Diaria"),
-            ];
-
-            for (view, label) in items {
-                let active = self.active_view == view;
-                let btn = egui::Button::new(
-                    RichText::new(label)
-                        .size(13.0)
+            let nav_resp = ui.vertical(|ui| {
+                ui.label(
+                    RichText::new("PLANIFICACIÓN")
+                        .size(10.5)
                         .strong()
-                        .color(if active { Color32::WHITE } else { p.ink_primary }),
-                )
-                .fill(if active { p.accent } else { Color32::TRANSPARENT })
-                .stroke(Stroke::NONE)
-                .rounding(Rounding::same(Radius::MD))
-                .min_size(Vec2::new(ui.available_width(), 32.0));
+                        .color(p.ink_muted),
+                );
+                ui.add_space(Spacing::XS);
 
-                if ui.add(btn).clicked() {
-                    self.active_view = view;
+                let items = [
+                    (ActiveView::Monthly, "Calendario Mensual"),
+                    (ActiveView::Weekly, "Vista Semanal"),
+                    (ActiveView::Daily, "Agenda Diaria"),
+                ];
+
+                for (view, label) in items {
+                    let active = self.active_view == view;
+                    let btn = egui::Button::new(
+                        RichText::new(label)
+                            .size(13.0)
+                            .strong()
+                            .color(if active { Color32::WHITE } else { p.ink_primary }),
+                    )
+                    .fill(if active { p.accent } else { Color32::TRANSPARENT })
+                    .stroke(Stroke::NONE)
+                    .rounding(Rounding::same(Radius::MD))
+                    .min_size(Vec2::new(ui.available_width(), 32.0));
+
+                    if ui.add(btn).clicked() {
+                        self.active_view = view;
+                    }
                 }
-            }
+            });
+            self.tour_anchors.views_nav = Some(nav_resp.response.rect);
 
             ui.add_space(Spacing::MD);
 
@@ -760,7 +789,7 @@ impl AgendaApp {
             ui.add_space(Spacing::SM);
 
             let backlog = self.store.unscheduled_backlog();
-            ui.horizontal(|ui| {
+            let backlog_hdr_resp = ui.horizontal(|ui| {
                 ui.label(
                     RichText::new("SIN PROGRAMAR")
                         .size(10.5)
@@ -776,6 +805,7 @@ impl AgendaApp {
                     );
                 });
             });
+            self.tour_anchors.backlog = Some(backlog_hdr_resp.response.rect);
             ui.add_space(Spacing::XS);
 
             let mut jump_to = None;
@@ -1294,6 +1324,7 @@ impl AgendaApp {
                         let cmd_filter = q.trim_start_matches('>').trim().to_lowercase();
                         let commands = [
                             ("hoy", "Ir a hoy (T)"),
+                            ("guia", "Ver guía interactiva de bienvenida"),
                             ("notificacion", "Mostrar notificación de hoy"),
                             ("tema", "Cambiar tema claro / oscuro"),
                             ("enfoque", "Iniciar / Salir de Modo Enfoque (F)"),
@@ -1331,6 +1362,10 @@ impl AgendaApp {
                                     "hoy" => {
                                         self.today = Date::today();
                                         self.select_date(self.today);
+                                    }
+                                    "guia" => {
+                                        self.tour_step = 0;
+                                        self.show_tour = true;
                                     }
                                     "notificacion" => {
                                         self.today = Date::today();
@@ -1845,7 +1880,7 @@ impl eframe::App for AgendaApp {
                 });
         }
 
-        egui::CentralPanel::default()
+        let central_resp = egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
                     .fill(p.bg_canvas)
@@ -1866,10 +1901,22 @@ impl eframe::App for AgendaApp {
                         }
                     });
             });
+        self.tour_anchors.calendar_area = Some(central_resp.response.rect);
 
         self.render_new_task_modal(ctx, p);
         self.render_command_palette(ctx, p);
         self.render_taskbar_pill(ctx, p);
+
+        if self.show_tour
+            && matches!(
+                render_tour_overlay(ctx, p, &mut self.tour_step, &self.tour_anchors),
+                TourOutcome::CompletedOrSkipped
+            )
+        {
+            self.show_tour = false;
+            self.store.onboarding_completed = true;
+            self.persist();
+        }
 
         if let Some(drag_id) = self.drag_backlog_id {
             if let Some(pos) = ctx.pointer_interact_pos() {

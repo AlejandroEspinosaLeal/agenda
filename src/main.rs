@@ -8,6 +8,7 @@ mod model;
 mod nlp;
 mod theme;
 mod timeblock;
+mod tour;
 mod tray;
 mod updater;
 mod views;
