@@ -169,7 +169,7 @@ pub fn render(app: &mut AgendaApp, ctx: &egui::Context, ui: &mut egui::Ui, p: Pa
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         cell_date.day.to_string(),
-                        FontId::proportional(11.5),
+                        FontId::monospace(11.5),
                         if is_today {
                             Color32::WHITE
                         } else if is_selected {
@@ -185,14 +185,7 @@ pub fn render(app: &mut AgendaApp, ctx: &egui::Context, ui: &mut egui::Ui, p: Pa
                             .filter(|o| !o.task.done)
                             .max_by_key(|o| o.task.priority)
                             .map(|o| {
-                                views::task_colors(
-                                    o.task.color,
-                                    &o.task.tag,
-                                    o.task.priority,
-                                    p,
-                                    app.dark_mode,
-                                )
-                                .0
+                                views::task_colors(o.task.color, &o.task.tag, o.task.priority, p).0
                             })
                             .unwrap_or(p.accent);
                         painter.circle_filled(
@@ -245,8 +238,7 @@ pub fn render(app: &mut AgendaApp, ctx: &egui::Context, ui: &mut egui::Ui, p: Pa
         } else {
             for occ in &occurrences {
                 let task = &occ.task;
-                let (fg, _) =
-                    views::task_colors(task.color, &task.tag, task.priority, p, app.dark_mode);
+                let (fg, _) = views::task_colors(task.color, &task.tag, task.priority, p);
                 egui::Frame::none()
                     .fill(if task.done { p.done_bg } else { p.bg_surface })
                     .stroke(Stroke::new(1.0_f32, p.border_subtle))
@@ -278,7 +270,12 @@ pub fn render(app: &mut AgendaApp, ctx: &egui::Context, ui: &mut egui::Ui, p: Pa
                                     delete_target = Some((occ.start_date, task.id));
                                 }
                                 if !task.time.is_empty() {
-                                    ui.label(RichText::new(&task.time).size(10.5).color(fg));
+                                    ui.label(
+                                        RichText::new(&task.time)
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(fg),
+                                    );
                                 }
                             });
                         });

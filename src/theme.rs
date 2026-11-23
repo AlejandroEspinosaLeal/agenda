@@ -2,9 +2,43 @@ use std::fs;
 
 use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, Rounding, Stroke, Vec2};
 
-/// Design tokens matching Clarity Suite ("Mi Agenda") in light and accessible dark modes.
+/// Centralized spacing tokens (4px base scale).
+pub struct Spacing;
+
+#[allow(dead_code)]
+impl Spacing {
+    pub const XS: f32 = 4.0;
+    pub const SM: f32 = 8.0;
+    pub const MD: f32 = 12.0;
+    pub const LG: f32 = 16.0;
+    pub const XL: f32 = 24.0;
+}
+
+/// Centralized corner radius tokens.
+pub struct Radius;
+
+#[allow(dead_code)]
+impl Radius {
+    pub const SM: f32 = 6.0;
+    pub const MD: f32 = 8.0;
+    pub const LG: f32 = 12.0;
+    pub const PILL: f32 = 14.0;
+}
+
+/// Unified semantic category token (solid accent, 12-15% tinted background, border, and WCAG AA text).
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub struct CategoryToken {
+    pub solid: Color32,
+    pub bg: Color32,
+    pub border: Color32,
+    pub text: Color32,
+}
+
+/// Centralized design tokens for Light and Dark modes (WCAG AA compliant).
 #[derive(Debug, Clone, Copy)]
 pub struct Palette {
+    pub dark: bool,
     pub bg_canvas: Color32,
     pub bg_surface: Color32,
     pub bg_elevated: Color32,
@@ -31,72 +65,96 @@ pub struct Palette {
 impl Palette {
     /// Clarity Suite editorial light theme (`#F8F9FC` canvas, `#4338CA` indigo primary).
     pub const LIGHT: Self = Self {
+        dark: false,
         bg_canvas: Color32::from_rgb(248, 249, 252),     // #F8F9FC
         bg_surface: Color32::from_rgb(255, 255, 255),    // #FFFFFF
-        bg_elevated: Color32::from_rgb(238, 237, 247),   // #EEEDF7 surface-container
+        bg_elevated: Color32::from_rgb(238, 237, 247),   // #EEEDF7
         bg_cell_hover: Color32::from_rgb(244, 242, 253), // #F4F2FD
         bg_cell_selected: Color32::from_rgb(227, 223, 255),
         bg_cell_muted: Color32::from_rgb(244, 242, 250),
         border: Color32::from_rgb(199, 196, 215),        // #C7C4D7
         border_subtle: Color32::from_rgb(228, 228, 231), // #E4E4E7
-        ink_primary: Color32::from_rgb(9, 9, 11),        // #09090B
-        ink_secondary: Color32::from_rgb(70, 69, 84),    // #464554
-        ink_muted: Color32::from_rgb(113, 113, 122),     // #71717A
-        accent: Color32::from_rgb(67, 56, 202),          // #4338CA indigo
+        ink_primary: Color32::from_rgb(9, 9, 11),        // #09090B (>18:1 on white)
+        ink_secondary: Color32::from_rgb(63, 63, 76),    // #3F3F4C (>9:1 on white)
+        ink_muted: Color32::from_rgb(96, 96, 108),       // #60606C (>5.8:1 WCAG AA)
+        accent: Color32::from_rgb(67, 56, 202),          // #4338CA (>7.5:1 on white)
         accent_soft: Color32::from_rgb(227, 223, 255),   // #E3DFFF
         priority_high: Color32::from_rgb(185, 5, 56),    // #B90538
-        priority_high_bg: Color32::from_rgb(255, 218, 219),
-        priority_normal: Color32::from_rgb(180, 83, 9),  // #B45309
+        priority_high_bg: Color32::from_rgb(255, 224, 228),
+        priority_normal: Color32::from_rgb(161, 72, 6),  // #A14806 (WCAG AA)
         priority_normal_bg: Color32::from_rgb(254, 243, 199),
-        priority_low: Color32::from_rgb(4, 120, 87),     // #047857
+        priority_low: Color32::from_rgb(4, 108, 78),     // #046C4E (WCAG AA)
         priority_low_bg: Color32::from_rgb(209, 250, 229),
-        done_green: Color32::from_rgb(4, 120, 87),
+        done_green: Color32::from_rgb(4, 108, 78),
         done_bg: Color32::from_rgb(238, 237, 247),
     };
 
-    /// Accessible high-contrast dark theme.
+    /// Accessible high-contrast dark theme (WCAG AA compliant).
     pub const DARK: Self = Self {
-        bg_canvas: Color32::from_rgb(13, 17, 23),
-        bg_surface: Color32::from_rgb(27, 34, 45),
-        bg_elevated: Color32::from_rgb(36, 45, 60),
-        bg_cell_hover: Color32::from_rgb(38, 49, 66),
-        bg_cell_selected: Color32::from_rgb(36, 49, 96),
-        bg_cell_muted: Color32::from_rgb(16, 20, 27),
-        border: Color32::from_rgb(68, 82, 104),
-        border_subtle: Color32::from_rgb(45, 55, 72),
-        ink_primary: Color32::from_rgb(248, 250, 252),
-        ink_secondary: Color32::from_rgb(203, 213, 225),
-        ink_muted: Color32::from_rgb(148, 163, 184),
-        accent: Color32::from_rgb(129, 140, 248), // bright indigo #818CF8
+        dark: true,
+        bg_canvas: Color32::from_rgb(13, 17, 23),        // #0D1117
+        bg_surface: Color32::from_rgb(27, 34, 45),       // #1B222D
+        bg_elevated: Color32::from_rgb(36, 45, 60),      // #242D3C
+        bg_cell_hover: Color32::from_rgb(38, 49, 66),    // #263142
+        bg_cell_selected: Color32::from_rgb(36, 49, 96), // #243160
+        bg_cell_muted: Color32::from_rgb(16, 20, 27),    // #10141B
+        border: Color32::from_rgb(76, 91, 114),          // #4C5B72
+        border_subtle: Color32::from_rgb(48, 59, 77),    // #303B4D
+        ink_primary: Color32::from_rgb(248, 250, 252),   // #F8FAFC (>14:1 on surface)
+        ink_secondary: Color32::from_rgb(203, 213, 225), // #CBD5E1 (>9:1 on surface)
+        ink_muted: Color32::from_rgb(148, 163, 184),     // #94A3B8 (>5.5:1 WCAG AA)
+        accent: Color32::from_rgb(129, 140, 248),        // #818CF8 (>5.1:1 on surface)
         accent_soft: Color32::from_rgb(40, 48, 92),
-        priority_high: Color32::from_rgb(251, 113, 133),
-        priority_high_bg: Color32::from_rgb(76, 29, 36),
-        priority_normal: Color32::from_rgb(251, 191, 36),
-        priority_normal_bg: Color32::from_rgb(74, 52, 20),
-        priority_low: Color32::from_rgb(52, 211, 153),
-        priority_low_bg: Color32::from_rgb(19, 68, 52),
-        done_green: Color32::from_rgb(52, 211, 153),
+        priority_high: Color32::from_rgb(253, 130, 149),
+        priority_high_bg: Color32::from_rgb(66, 30, 40),
+        priority_normal: Color32::from_rgb(252, 201, 68),
+        priority_normal_bg: Color32::from_rgb(64, 48, 22),
+        priority_low: Color32::from_rgb(72, 220, 168),
+        priority_low_bg: Color32::from_rgb(21, 60, 48),
+        done_green: Color32::from_rgb(72, 220, 168),
         done_bg: Color32::from_rgb(32, 41, 54),
     };
-}
 
-/// Returns semantic `(fg, bg)` colors for Clarity Suite categories.
-pub fn category_colors(tag: &str, dark: bool) -> (Color32, Color32) {
-    if dark {
-        match tag {
-            "Trabajo" => (Color32::from_rgb(56, 189, 248), Color32::from_rgb(17, 50, 74)),
-            "Personal" => (Color32::from_rgb(167, 139, 250), Color32::from_rgb(48, 34, 84)),
-            "Estudio" => (Color32::from_rgb(251, 191, 36), Color32::from_rgb(74, 52, 20)),
-            "Salud" => (Color32::from_rgb(52, 211, 153), Color32::from_rgb(19, 68, 52)),
-            _ => (Color32::from_rgb(203, 213, 225), Color32::from_rgb(36, 45, 60)),
-        }
-    } else {
-        match tag {
-            "Trabajo" => (Color32::from_rgb(3, 105, 161), Color32::from_rgb(224, 242, 254)),
-            "Personal" => (Color32::from_rgb(109, 40, 217), Color32::from_rgb(237, 233, 254)),
-            "Estudio" => (Color32::from_rgb(180, 83, 9), Color32::from_rgb(254, 243, 199)),
-            "Salud" => (Color32::from_rgb(4, 120, 87), Color32::from_rgb(209, 250, 229)),
-            _ => (Color32::from_rgb(70, 69, 84), Color32::from_rgb(238, 237, 247)),
+    /// Returns unified semantic tokens (solid, 14% tinted bg, border, WCAG AA text) for a category.
+    pub fn category_token(&self, tag: &str) -> CategoryToken {
+        let solid = if self.dark {
+            match tag {
+                "Trabajo" => Color32::from_rgb(56, 189, 248),
+                "Personal" => Color32::from_rgb(167, 139, 250),
+                "Estudio" => Color32::from_rgb(251, 191, 36),
+                "Salud" => Color32::from_rgb(52, 211, 153),
+                _ => self.ink_secondary,
+            }
+        } else {
+            match tag {
+                "Trabajo" => Color32::from_rgb(2, 132, 199),
+                "Personal" => Color32::from_rgb(109, 40, 217),
+                "Estudio" => Color32::from_rgb(180, 83, 9),
+                "Salud" => Color32::from_rgb(5, 150, 105),
+                _ => self.ink_secondary,
+            }
+        };
+
+        let text = if self.dark {
+            solid
+        } else {
+            match tag {
+                "Trabajo" => Color32::from_rgb(3, 105, 161),
+                "Personal" => Color32::from_rgb(91, 33, 182),
+                "Estudio" => Color32::from_rgb(146, 64, 14),
+                "Salud" => Color32::from_rgb(4, 108, 78),
+                _ => self.ink_secondary,
+            }
+        };
+
+        let bg_alpha = if self.dark { 0.15_f32 } else { 0.13_f32 };
+        let border_alpha = if self.dark { 0.38_f32 } else { 0.30_f32 };
+
+        CategoryToken {
+            solid,
+            bg: blend_rgb(solid, self.bg_surface, bg_alpha),
+            border: blend_rgb(solid, self.bg_surface, border_alpha),
+            text,
         }
     }
 }
@@ -121,7 +179,7 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) -> Palette {
     let p = if dark { Palette::DARK } else { Palette::LIGHT };
 
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = Vec2::new(8.0, 8.0);
+    style.spacing.item_spacing = Vec2::new(Spacing::SM, Spacing::SM);
     style.spacing.button_padding = Vec2::new(10.0, 6.0);
     style.spacing.interact_size = Vec2::new(36.0, 28.0);
 
@@ -139,22 +197,22 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) -> Palette {
     visuals.widgets.noninteractive.bg_fill = p.bg_surface;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, p.border_subtle);
     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, p.ink_primary);
-    visuals.widgets.noninteractive.rounding = Rounding::same(8.0);
+    visuals.widgets.noninteractive.rounding = Rounding::same(Radius::MD);
 
     visuals.widgets.inactive.bg_fill = p.bg_elevated;
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, p.border_subtle);
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, p.ink_primary);
-    visuals.widgets.inactive.rounding = Rounding::same(8.0);
+    visuals.widgets.inactive.rounding = Rounding::same(Radius::MD);
 
     visuals.widgets.hovered.bg_fill = p.bg_cell_hover;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, p.accent);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, p.ink_primary);
-    visuals.widgets.hovered.rounding = Rounding::same(8.0);
+    visuals.widgets.hovered.rounding = Rounding::same(Radius::MD);
 
     visuals.widgets.active.bg_fill = p.accent_soft;
     visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, p.accent);
     visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, p.ink_primary);
-    visuals.widgets.active.rounding = Rounding::same(8.0);
+    visuals.widgets.active.rounding = Rounding::same(Radius::MD);
 
     visuals.selection.bg_fill = p.accent_soft;
     visuals.selection.stroke = Stroke::new(1.0_f32, p.accent);
@@ -166,13 +224,17 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) -> Palette {
 
 /// Blends an arbitrary RGB accent with the surface color for readable cell backgrounds.
 pub fn soft_tint(rgb: [u8; 3], surface: Color32, dark: bool) -> Color32 {
-    let alpha = if dark { 0.24_f32 } else { 0.16_f32 };
-    let blend = |fg: u8, bg: u8| -> u8 {
-        (f32::from(fg) * alpha + f32::from(bg) * (1.0 - alpha)).round() as u8
+    let alpha = if dark { 0.15_f32 } else { 0.14_f32 };
+    blend_rgb(Color32::from_rgb(rgb[0], rgb[1], rgb[2]), surface, alpha)
+}
+
+fn blend_rgb(fg: Color32, bg: Color32, alpha: f32) -> Color32 {
+    let blend = |f: u8, b: u8| -> u8 {
+        (f32::from(f) * alpha + f32::from(b) * (1.0 - alpha)).round() as u8
     };
     Color32::from_rgb(
-        blend(rgb[0], surface.r()),
-        blend(rgb[1], surface.g()),
-        blend(rgb[2], surface.b()),
+        blend(fg.r(), bg.r()),
+        blend(fg.g(), bg.g()),
+        blend(fg.b(), bg.b()),
     )
 }

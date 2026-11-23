@@ -2,8 +2,12 @@
 
 mod app;
 mod calendar;
+mod export;
+mod focus;
 mod model;
+mod nlp;
 mod theme;
+mod timeblock;
 mod tray;
 mod updater;
 mod views;
