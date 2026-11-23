@@ -50,6 +50,7 @@ pub struct AgendaApp {
     pub monthly_inspector_open: bool,
     pub notes_dirty_at: Option<Instant>,
     pub grid_create_drag: Option<GridCreateDrag>,
+    pub monthly_range_drag: Option<(Date, Date)>,
     pub drag_backlog_id: Option<u64>,
     pub show_taskbar_pill: bool,
     pub show_new_task_modal: bool,
@@ -114,6 +115,7 @@ impl AgendaApp {
             monthly_inspector_open: true,
             notes_dirty_at: None,
             grid_create_drag: None,
+            monthly_range_drag: None,
             drag_backlog_id: None,
             show_taskbar_pill: true,
             show_new_task_modal: false,
@@ -223,6 +225,17 @@ impl AgendaApp {
         self.new_time = format!("{:02}:{:02}", start_min / 60, start_min % 60);
         let safe_end = end_min.max(start_min + 15).min(1439);
         self.new_end_time = format!("{:02}:{:02}", safe_end / 60, safe_end % 60);
+        self.show_new_task_modal = true;
+    }
+
+    /// Opens the new-task modal pre-filled for a multi-day range dragged in Monthly view.
+    pub fn open_span_draft(&mut self, start_date: Date, span_days: u8) {
+        self.select_date(start_date);
+        self.new_all_day = true;
+        self.new_time.clear();
+        self.new_end_time.clear();
+        self.new_span_days = span_days.clamp(1, 31);
+        self.new_recurrence = Recurrence::None;
         self.show_new_task_modal = true;
     }
 

@@ -189,6 +189,10 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     let painter = ui.painter();
 
     let first_of_month = Date::new(app.view_year, app.view_month, 1);
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+    let drag_range = app
+        .monthly_range_drag
+        .map(|(a, b)| if a <= b { (a, b) } else { (b, a) });
 
     for row in 0..rows {
         for col in 0..7 {
@@ -220,8 +224,20 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
             let is_selected = cell_date == app.selected_date;
             let is_today = cell_date == app.today;
 
-            let response =
-                ui.interact(cell_rect, ui.id().with(("m_day", cell_date)), Sense::click());
+            let response = ui.interact(
+                cell_rect,
+                ui.id().with(("m_day", cell_date)),
+                Sense::click_and_drag(),
+            );
+            if response.drag_started() {
+                app.monthly_range_drag = Some((cell_date, cell_date));
+            }
+            if let Some((start, _)) = app.monthly_range_drag {
+                if pointer_pos.is_some_and(|pos| cell_rect.contains(pos)) {
+                    app.monthly_range_drag = Some((start, cell_date));
+                }
+            }
+            let in_drag_range = drag_range.is_some_and(|(s, e)| cell_date >= s && cell_date <= e);
             let plus_rect = egui::Rect::from_min_size(
                 egui::pos2(cell_rect.max.x - 24.0, cell_rect.min.y + 6.0),
                 Vec2::splat(18.0),
@@ -257,7 +273,9 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 .filter(|occ| !occ.task.done)
                 .max_by_key(|occ| occ.task.priority);
 
-            let bg = if let Some(occ) = dominant_pending {
+            let bg = if in_drag_range {
+                p.accent_soft
+            } else if let Some(occ) = dominant_pending {
                 views::task_colors(occ.task.color, &occ.task.tag, occ.task.priority, p).1
             } else if !tasks.is_empty() {
                 p.done_bg
@@ -375,7 +393,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 );
             }
 
-            let stroke = if is_selected {
+            let stroke = if in_drag_range || is_selected {
                 Stroke::new(2.0_f32, p.accent)
             } else if response.hovered() || plus_resp.hovered() {
                 Stroke::new(1.0_f32, p.accent)
@@ -397,6 +415,32 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     FontId::proportional(12.0),
                     if plus_resp.hovered() { Color32::WHITE } else { p.accent },
                 );
+            }
+        }
+    }
+
+    if let Some((a, b)) = app.monthly_range_drag {
+        let (start, end) = if a <= b { (a, b) } else { (b, a) };
+        let span = (start.days_until(end) + 1).clamp(1, 31) as u8;
+        if ui.input(|i| i.pointer.primary_down()) {
+            if span > 1 {
+                if let Some(pos) = pointer_pos {
+                    let pill_rect =
+                        egui::Rect::from_min_size(pos + Vec2::new(12.0, 12.0), Vec2::new(66.0, 22.0));
+                    painter.rect_filled(pill_rect, Rounding::same(6.0), p.accent);
+                    painter.text(
+                        pill_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{span} días"),
+                        FontId::proportional(11.0),
+                        Color32::WHITE,
+                    );
+                }
+            }
+        } else {
+            app.monthly_range_drag = None;
+            if span > 1 {
+                app.open_span_draft(start, span);
             }
         }
     }

@@ -24,6 +24,12 @@ impl Date {
         civil_from_days(days)
     }
 
+    /// Returns signed number of days from `self` to `other`.
+    pub fn days_until(self, other: Self) -> i64 {
+        days_from_civil(other.year, other.month, other.day)
+            - days_from_civil(self.year, self.month, self.day)
+    }
+
     /// Returns today's date (UTC-based via `SystemTime`).
     pub fn today() -> Self {
         let secs = SystemTime::now()
