@@ -22,7 +22,7 @@ pub const TOUR_STEPS: [TourStep; 6] = [
     TourStep {
         target: TourTarget::CalendarArea,
         title: "1. Tu calendario interactivo",
-        body: "Haz clic o arrastra sobre una franja horaria en Diaria o Semanal para crear un bloque. También puedes arrastrar bloques para moverlos o estirarlos desde su borde inferior.",
+        body: "En Mensual, arrastra sobre varios días seguidos para crear una tarea multi-día. En Diaria o Semanal, arrastra sobre las horas para crear, mover o estirar bloques.",
     },
     TourStep {
         target: TourTarget::ViewsNav,
@@ -47,7 +47,7 @@ pub const TOUR_STEPS: [TourStep; 6] = [
     TourStep {
         target: TourTarget::ThemeAndHelp,
         title: "6. Tema, notificaciones y ayuda",
-        body: "Cambia entre modo claro/oscuro, recibe tu resumen diario en Windows y vuelve a abrir esta guía cuando quieras desde el botón \"?\".",
+        body: "Cambia entre modo claro/oscuro, recibe una notificación diaria en Windows con tus pendientes del día y vuelve a abrir esta guía cuando quieras desde el botón \"?\".",
     },
 ];
 

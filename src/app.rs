@@ -52,7 +52,6 @@ pub struct AgendaApp {
     pub grid_create_drag: Option<GridCreateDrag>,
     pub monthly_range_drag: Option<(Date, Date)>,
     pub drag_backlog_id: Option<u64>,
-    pub show_taskbar_pill: bool,
     pub show_new_task_modal: bool,
     pub show_command_palette: bool,
     pub palette_query: String,
@@ -117,7 +116,6 @@ impl AgendaApp {
             grid_create_drag: None,
             monthly_range_drag: None,
             drag_backlog_id: None,
-            show_taskbar_pill: true,
             show_new_task_modal: false,
             show_command_palette: false,
             palette_query: String::new(),
@@ -243,133 +241,6 @@ impl AgendaApp {
         self.view_year = date.year;
         self.view_month = date.month;
         self.selected_date = date;
-    }
-
-    fn next_pending_today(&self) -> (usize, Option<crate::model::Task>) {
-        let mut pending: Vec<_> = self
-            .store
-            .tasks_visible_on(self.today)
-            .into_iter()
-            .filter(|occ| !occ.task.done)
-            .map(|occ| occ.task)
-            .collect();
-        let count = pending.len();
-        pending.sort_by(|a, b| a.time.cmp(&b.time));
-        (count, pending.into_iter().next())
-    }
-
-    fn render_taskbar_pill(&mut self, ctx: &egui::Context, p: Palette) {
-        if !self.show_taskbar_pill {
-            return;
-        }
-        let pill_size = Vec2::new(224.0, 34.0);
-        let default_pos = ctx
-            .input(|i| i.viewport().monitor_size)
-            .map(|mon| Pos2::new((mon.x - pill_size.x - 240.0).max(0.0), (mon.y - 42.0).max(0.0)))
-            .unwrap_or_else(|| Pos2::new(980.0, 680.0));
-
-        let id = egui::ViewportId::from_hash_of("mi_agenda_taskbar_pill");
-        let builder = egui::ViewportBuilder::default()
-            .with_title("Mi Agenda Widget")
-            .with_inner_size(pill_size)
-            .with_position(default_pos)
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_taskbar(false)
-            .with_resizable(false)
-            .with_window_level(WindowLevel::AlwaysOnTop);
-
-        let (pending_count, next_task) = self.next_pending_today();
-
-        let mut open_mini = false;
-        ctx.show_viewport_immediate(id, builder, |ui_ctx, _class| {
-            egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(Color32::TRANSPARENT))
-                .show(ui_ctx, |ui| {
-                    let rect = ui.max_rect();
-                    let resp = ui.interact(
-                        rect,
-                        ui.id().with("pill_drag_click"),
-                        Sense::click_and_drag(),
-                    );
-                    if resp.drag_started() {
-                        ui_ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                    }
-                    if resp.clicked() {
-                        open_mini = true;
-                    }
-
-                    // Sleek dark-frosted pill matching Windows 11 taskbar
-                    let bg = if resp.hovered() {
-                        Color32::from_rgb(42, 48, 60)
-                    } else {
-                        Color32::from_rgb(28, 32, 40)
-                    };
-                    let border = if pending_count > 0 {
-                        p.accent
-                    } else {
-                        Color32::from_rgb(62, 70, 86)
-                    };
-
-                    let painter = ui.painter();
-                    painter.rect_filled(rect.shrink(1.0), Rounding::same(10.0), bg);
-                    painter.rect_stroke(
-                        rect.shrink(1.0),
-                        Rounding::same(10.0),
-                        Stroke::new(1.0_f32, border),
-                    );
-
-                    let dot_color = match &next_task {
-                        Some(task) => views::task_colors(task.color, &task.tag, task.priority, p).0,
-                        None => p.done_green,
-                    };
-                    painter.circle_filled(
-                        egui::pos2(rect.min.x + 15.0, rect.center().y),
-                        4.5,
-                        dot_color,
-                    );
-
-                    let label = match &next_task {
-                        Some(task) => {
-                            let base = if task.time.is_empty() {
-                                task.title.clone()
-                            } else {
-                                format!("{} · {}", task.time, task.title)
-                            };
-                            views::truncate_chars(&base, 22)
-                        }
-                        None => "Sin tareas hoy".to_owned(),
-                    };
-                    painter.text(
-                        egui::pos2(rect.min.x + 26.0, rect.center().y),
-                        egui::Align2::LEFT_CENTER,
-                        label,
-                        egui::FontId::proportional(12.0),
-                        Color32::from_rgb(244, 246, 250),
-                    );
-
-                    if pending_count > 1 {
-                        let badge_rect = egui::Rect::from_min_size(
-                            egui::pos2(rect.max.x - 32.0, rect.center().y - 9.0),
-                            Vec2::new(24.0, 18.0),
-                        );
-                        painter.rect_filled(badge_rect, Rounding::same(9.0), p.accent);
-                        painter.text(
-                            badge_rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            format!("+{pending_count}"),
-                            egui::FontId::proportional(10.0),
-                            Color32::WHITE,
-                        );
-                    }
-                });
-        });
-
-        if open_mini {
-            self.today = Date::today();
-            self.select_date(self.today);
-            self.set_mini_mode(ctx, true);
-        }
     }
 
     pub fn set_mini_mode(&mut self, ctx: &egui::Context, mini: bool) {
@@ -1863,7 +1734,6 @@ impl eframe::App for AgendaApp {
                 .show(ctx, |ui| {
                     views::mini::render(self, ctx, ui, p);
                 });
-            self.render_taskbar_pill(ctx, p);
             return;
         }
 
@@ -1918,7 +1788,6 @@ impl eframe::App for AgendaApp {
 
         self.render_new_task_modal(ctx, p);
         self.render_command_palette(ctx, p);
-        self.render_taskbar_pill(ctx, p);
 
         if self.show_tour
             && matches!(
