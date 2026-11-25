@@ -953,215 +953,312 @@ impl AgendaApp {
         let mut close_on_submit = false;
         let date = self.selected_date;
         let end_date = date.add_days(i64::from(self.new_span_days.max(1) - 1));
-        let modal_title = if self.new_span_days > 1 {
+        let date_heading = if self.new_span_days > 1 {
             if date.month == end_date.month {
                 format!(
-                    "Nueva Tarea · {} al {} de {} ({} días)",
+                    "{} – {} de {}",
                     date.day,
                     end_date.day,
                     month_name_es(date.month),
-                    self.new_span_days
                 )
             } else {
                 format!(
-                    "Nueva Tarea · {} {} al {} {} ({} días)",
+                    "{} {} – {} {}",
                     date.day,
                     month_name_es(date.month),
                     end_date.day,
                     month_name_es(end_date.month),
-                    self.new_span_days
                 )
             }
         } else {
-            format!("Nueva Tarea · {} de {}", date.day, month_name_es(date.month))
+            format!("{} de {}", date.day, month_name_es(date.month))
         };
 
-        egui::Window::new(modal_title)
+        // Subtle dim backdrop for modern modal depth
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("new_task_backdrop"))
+            .order(egui::Order::Middle)
+            .fixed_pos(screen.min)
+            .show(ctx, |ui| {
+                ui.painter().rect_filled(
+                    screen,
+                    0.0,
+                    Color32::from_black_alpha(if p.dark { 135 } else { 85 }),
+                );
+            });
+
+        egui::Window::new("new_task_modal_win")
             .id(egui::Id::new("new_task_modal"))
-            .open(&mut open)
+            .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .default_width(380.0)
+            .default_width(450.0)
+            .max_width(450.0)
+            .frame(
+                egui::Frame::window(&ctx.style())
+                    .fill(p.bg_surface)
+                    .stroke(Stroke::new(1.0_f32, p.border))
+                    .rounding(Rounding::same(14.0))
+                    .inner_margin(20.0),
+            )
             .show(ctx, |ui| {
-                if self.new_span_days > 1 {
-                    egui::Frame::none()
-                        .fill(p.accent_soft)
-                        .stroke(Stroke::new(1.0_f32, p.accent))
-                        .rounding(Rounding::same(Radius::SM))
-                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "Rango: {} {} → {} {} ({} días)",
-                                        date.day,
-                                        month_name_es(date.month),
-                                        end_date.day,
-                                        month_name_es(end_date.month),
-                                        self.new_span_days
-                                    ))
-                                    .size(12.0)
-                                    .strong()
-                                    .color(p.accent),
-                                );
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("Solo 1 día")
-                                                    .size(11.0)
-                                                    .color(p.ink_secondary),
-                                            )
-                                            .fill(p.bg_surface),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.new_span_days = 1;
-                                    }
-                                });
-                            });
-                        });
-                    ui.add_space(Spacing::XS);
-                }
-            ui.label(
-                RichText::new("Título de la tarea")
-                    .size(12.0)
-                    .color(p.ink_secondary),
-            );
-            let title_resp = ui.add(
-                egui::TextEdit::singleline(&mut self.new_title)
-                    .hint_text("ej. Comprar billetes de tren")
-                    .desired_width(f32::INFINITY),
-            );
-
-            ui.add_space(Spacing::SM);
-            views::schedule_and_recurrence_controls(
-                ui,
-                &mut self.new_all_day,
-                &mut self.new_time,
-                &mut self.new_end_time,
-                &mut self.new_recurrence,
-                p,
-            );
-
-            ui.add_space(Spacing::XS);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_location)
-                    .hint_text("Lugar o contexto (opcional)")
-                    .desired_width(f32::INFINITY),
-            );
-            ui.add_space(Spacing::XS);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_notes)
-                    .hint_text("Nota o descripción breve (opcional)")
-                    .desired_width(f32::INFINITY),
-            );
-
-            ui.add_space(Spacing::SM);
-            ui.label(RichText::new("Categoría").size(11.5).color(p.ink_secondary));
-            ui.horizontal_wrapped(|ui| {
-                for cat in TAG_PRESETS {
-                    let selected = self.new_tag == cat;
-                    let tok = p.category_token(cat);
-                    let btn = egui::Button::new(
-                        RichText::new(cat)
-                            .size(11.5)
+                // Modern header: badge + date + close button
+                ui.horizontal(|ui| {
+                    let badge_txt = if self.new_span_days > 1 {
+                        format!("{} DÍAS", self.new_span_days)
+                    } else {
+                        "NUEVA TAREA".to_owned()
+                    };
+                    views::badge(ui, &badge_txt, p.accent, p.accent_soft);
+                    ui.label(
+                        RichText::new(&date_heading)
+                            .size(16.0)
                             .strong()
-                            .color(if selected { Color32::WHITE } else { tok.text }),
-                    )
-                    .fill(if selected { tok.solid } else { tok.bg })
-                    .stroke(Stroke::new(
-                        1.0_f32,
-                        if selected { tok.solid } else { tok.border },
-                    ));
-                    if ui.add(btn).clicked() {
-                        self.new_tag = if selected { String::new() } else { cat.to_owned() };
-                    }
-                }
-            });
+                            .color(p.ink_primary),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("✕").size(12.5).color(p.ink_secondary),
+                                )
+                                .fill(p.bg_elevated)
+                                .stroke(Stroke::NONE)
+                                .rounding(Rounding::same(Radius::SM))
+                                .min_size(Vec2::splat(28.0)),
+                            )
+                            .clicked()
+                        {
+                            open = false;
+                        }
+                        if self.new_span_days > 1
+                            && ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Solo 1 día")
+                                            .size(11.0)
+                                            .color(p.ink_secondary),
+                                    )
+                                    .fill(p.bg_elevated)
+                                    .rounding(Rounding::same(Radius::SM)),
+                                )
+                                .clicked()
+                        {
+                            self.new_span_days = 1;
+                        }
+                    });
+                });
 
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Prioridad:").size(11.5).color(p.ink_secondary));
-                for prio in [Priority::Low, Priority::Normal, Priority::High] {
-                    let selected = self.new_priority == prio;
-                    let (fg, bg) = views::priority_colors(prio, p);
-                    let btn = egui::Button::new(
-                        RichText::new(prio.label_es())
-                            .size(11.5)
-                            .color(if selected { fg } else { p.ink_secondary }),
-                    )
-                    .fill(if selected { bg } else { p.bg_elevated })
-                    .stroke(Stroke::new(
-                        if selected { 1.5_f32 } else { 1.0_f32 },
-                        if selected { fg } else { p.border_subtle },
-                    ));
-                    if ui.add(btn).clicked() {
-                        self.new_priority = prio;
-                    }
-                }
-            });
+                ui.add_space(Spacing::MD);
 
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Color:").size(11.5).color(p.ink_secondary));
-                let auto = self.new_color.is_none();
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new("Auto")
-                                .size(11.0)
-                                .color(if auto { p.accent } else { p.ink_secondary }),
-                        )
-                        .fill(if auto { p.accent_soft } else { p.bg_elevated }),
-                    )
-                    .clicked()
-                {
-                    self.new_color = None;
-                }
-                for preset in COLOR_PRESETS {
-                    let selected = self.new_color == Some(preset);
-                    let c = Color32::from_rgb(preset[0], preset[1], preset[2]);
-                    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::click());
-                    ui.painter().circle_filled(rect.center(), 7.0, c);
-                    if selected {
-                        ui.painter().circle_stroke(
-                            rect.center(),
-                            8.5,
-                            Stroke::new(1.5_f32, p.ink_primary),
+                // Hero title input
+                let title_resp = ui.add_sized(
+                    Vec2::new(ui.available_width(), 38.0),
+                    egui::TextEdit::singleline(&mut self.new_title)
+                        .hint_text("¿Qué quieres planificar? (ej. Comprar billetes)")
+                        .font(egui::FontId::proportional(15.0))
+                        .margin(egui::Margin::symmetric(12.0, 8.0)),
+                );
+
+                ui.add_space(Spacing::MD);
+
+                // Grouped schedule & recurrence card
+                egui::Frame::none()
+                    .fill(p.bg_canvas)
+                    .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                    .rounding(Rounding::same(Radius::MD))
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        views::schedule_and_recurrence_controls(
+                            ui,
+                            &mut self.new_all_day,
+                            &mut self.new_time,
+                            &mut self.new_end_time,
+                            &mut self.new_recurrence,
+                            p,
                         );
+                    });
+
+                ui.add_space(Spacing::SM);
+
+                // Location & Notes side by side
+                ui.horizontal(|ui| {
+                    let half = ((ui.available_width() - Spacing::SM) * 0.5).max(120.0);
+                    ui.add_sized(
+                        Vec2::new(half, 32.0),
+                        egui::TextEdit::singleline(&mut self.new_location)
+                            .hint_text("Lugar (opcional)")
+                            .margin(egui::Margin::symmetric(10.0, 6.0)),
+                    );
+                    ui.add_sized(
+                        Vec2::new(half, 32.0),
+                        egui::TextEdit::singleline(&mut self.new_notes)
+                            .hint_text("Nota breve (opcional)")
+                            .margin(egui::Margin::symmetric(10.0, 6.0)),
+                    );
+                });
+
+                ui.add_space(Spacing::MD);
+
+                // Category & Priority cleanly organized
+                ui.label(
+                    RichText::new("CATEGORÍA")
+                        .size(10.5)
+                        .strong()
+                        .color(p.ink_muted),
+                );
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    for cat in TAG_PRESETS {
+                        let selected = self.new_tag == cat;
+                        let tok = p.category_token(cat);
+                        let btn = egui::Button::new(
+                            RichText::new(cat)
+                                .size(11.5)
+                                .strong()
+                                .color(if selected { Color32::WHITE } else { tok.text }),
+                        )
+                        .fill(if selected { tok.solid } else { tok.bg })
+                        .stroke(Stroke::new(
+                            1.0_f32,
+                            if selected { tok.solid } else { tok.border },
+                        ))
+                        .rounding(Rounding::same(Radius::PILL));
+                        if ui.add(btn).clicked() {
+                            self.new_tag = if selected {
+                                String::new()
+                            } else {
+                                cat.to_owned()
+                            };
+                        }
                     }
-                    if resp.clicked() {
-                        self.new_color = Some(preset);
-                        self.custom_rgb = preset;
+                });
+
+                ui.add_space(Spacing::SM);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("PRIORIDAD")
+                            .size(10.5)
+                            .strong()
+                            .color(p.ink_muted),
+                    );
+                    ui.add_space(4.0);
+                    for prio in [Priority::Low, Priority::Normal, Priority::High] {
+                        let selected = self.new_priority == prio;
+                        let (fg, bg) = views::priority_colors(prio, p);
+                        let btn = egui::Button::new(
+                            RichText::new(prio.label_es())
+                                .size(11.5)
+                                .strong()
+                                .color(if selected { fg } else { p.ink_secondary }),
+                        )
+                        .fill(if selected { bg } else { p.bg_elevated })
+                        .stroke(Stroke::new(
+                            if selected { 1.5_f32 } else { 1.0_f32 },
+                            if selected { fg } else { p.border_subtle },
+                        ))
+                        .rounding(Rounding::same(Radius::PILL));
+                        if ui.add(btn).clicked() {
+                            self.new_priority = prio;
+                        }
                     }
-                }
-                if ui.color_edit_button_srgb(&mut self.custom_rgb).changed() {
-                    self.new_color = Some(self.custom_rgb);
+                });
+
+                ui.add_space(Spacing::SM);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("COLOR")
+                            .size(10.5)
+                            .strong()
+                            .color(p.ink_muted),
+                    );
+                    ui.add_space(4.0);
+                    let auto = self.new_color.is_none();
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("Auto")
+                                    .size(11.0)
+                                    .color(if auto { p.accent } else { p.ink_secondary }),
+                            )
+                            .fill(if auto { p.accent_soft } else { p.bg_elevated })
+                            .rounding(Rounding::same(Radius::PILL)),
+                        )
+                        .clicked()
+                    {
+                        self.new_color = None;
+                    }
+                    for preset in COLOR_PRESETS {
+                        let selected = self.new_color == Some(preset);
+                        let c = Color32::from_rgb(preset[0], preset[1], preset[2]);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+                        ui.painter().circle_filled(rect.center(), 7.5, c);
+                        if selected {
+                            ui.painter().circle_stroke(
+                                rect.center(),
+                                9.0,
+                                Stroke::new(1.5_f32, p.ink_primary),
+                            );
+                        }
+                        if resp.clicked() {
+                            self.new_color = Some(preset);
+                            self.custom_rgb = preset;
+                        }
+                    }
+                    if ui.color_edit_button_srgb(&mut self.custom_rgb).changed() {
+                        self.new_color = Some(self.custom_rgb);
+                    }
+                });
+
+                ui.add_space(Spacing::MD);
+                ui.separator();
+                ui.add_space(Spacing::SM);
+
+                let enter_submit =
+                    title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let mut save_clicked = false;
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        save_clicked = ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("+ Guardar en Agenda")
+                                        .size(13.0)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                )
+                                .fill(p.accent)
+                                .stroke(Stroke::NONE)
+                                .rounding(Rounding::same(Radius::MD))
+                                .min_size(Vec2::new(165.0, 36.0)),
+                            )
+                            .clicked();
+
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("Cancelar")
+                                        .size(12.5)
+                                        .color(p.ink_secondary),
+                                )
+                                .fill(p.bg_elevated)
+                                .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                                .rounding(Rounding::same(Radius::MD))
+                                .min_size(Vec2::new(90.0, 36.0)),
+                            )
+                            .clicked()
+                        {
+                            open = false;
+                        }
+                    });
+                });
+
+                if (enter_submit || save_clicked) && self.submit_draft(date) {
+                    close_on_submit = true;
                 }
             });
-
-            ui.add_space(10.0);
-            let submit = (title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                || ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new("+ Guardar en mi Agenda")
-                                .size(13.0)
-                                .strong()
-                                .color(Color32::WHITE),
-                        )
-                        .fill(p.accent)
-                        .stroke(Stroke::NONE)
-                        .min_size(Vec2::new(ui.available_width(), 34.0)),
-                    )
-                    .clicked();
-
-            if submit && self.submit_draft(date) {
-                close_on_submit = true;
-            }
-        });
 
         self.show_new_task_modal = open && !close_on_submit;
         if !self.show_new_task_modal {
