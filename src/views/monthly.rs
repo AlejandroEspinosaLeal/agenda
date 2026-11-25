@@ -7,7 +7,7 @@ use crate::calendar::{
     days_in_month, first_weekday_monday_zero, month_name_es, month_short_es, weekday_name_es, Date,
 };
 use crate::theme::{Palette, Radius, Spacing};
-use crate::views::{self, TAG_PRESETS};
+use crate::views;
 
 const WEEKDAYS: [&str; 7] = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
 
@@ -19,12 +19,12 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
         .count();
     let free_pct = ((total_days_m - days_with_tasks) * 100) / total_days_m.max(1);
 
-    // Top control card (‹ Hoy ›  Noviembre 2026 + Category Filter Pills + Stats)
+    // Top control card: clean 2-row hierarchy (Navigation + Month | Stats + Category Filters)
     egui::Frame::none()
         .fill(p.bg_surface)
         .stroke(Stroke::new(1.0_f32, p.border_subtle))
-        .rounding(Rounding::same(12.0))
-        .inner_margin(14.0)
+        .rounding(Rounding::same(Radius::LG))
+        .inner_margin(egui::Margin::symmetric(16.0, 12.0))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -32,7 +32,8 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                 let nav_btn = |text: &str| {
                     egui::Button::new(RichText::new(text).size(15.0).strong().color(p.ink_primary))
                         .fill(p.bg_elevated)
-                        .stroke(Stroke::NONE)
+                        .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                        .rounding(Rounding::same(Radius::SM))
                         .min_size(Vec2::new(30.0, 30.0))
                 };
 
@@ -43,7 +44,8 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                     .add(
                         egui::Button::new(RichText::new("Hoy").size(12.5).strong().color(p.ink_primary))
                             .fill(p.bg_elevated)
-                            .stroke(Stroke::NONE)
+                            .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                            .rounding(Rounding::same(Radius::SM))
                             .min_size(Vec2::new(48.0, 30.0)),
                     )
                     .clicked()
@@ -58,19 +60,40 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(month_name_es(app.view_month))
-                        .size(24.0)
+                        .size(23.0)
                         .strong()
                         .color(p.ink_primary),
                 );
                 ui.label(
                     RichText::new(app.view_year.to_string())
-                        .size(22.0)
+                        .size(21.0)
+                        .monospace()
                         .color(p.ink_muted),
                 );
 
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    views::category_filter_pills(ui, &mut app.category_filter, p);
-                });
+                if !app.focus_mode {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let insp_lbl = if app.monthly_inspector_open {
+                            "Ocultar panel"
+                        } else {
+                            "Ver panel"
+                        };
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new(insp_lbl).size(12.0).color(p.ink_secondary),
+                                )
+                                .fill(p.bg_elevated)
+                                .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                                .rounding(Rounding::same(Radius::SM))
+                                .min_size(Vec2::new(92.0, 28.0)),
+                            )
+                            .clicked()
+                        {
+                            app.monthly_inspector_open = !app.monthly_inspector_open;
+                        }
+                    });
+                }
             });
 
             ui.add_space(Spacing::SM);
@@ -89,32 +112,22 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                 );
                 views::badge(
                     ui,
-                    &format!("{free_pct}% Tiempo Libre"),
+                    &format!("{free_pct}% Libre"),
                     p.accent,
                     p.accent_soft,
                 );
 
-                if !app.focus_mode {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let insp_lbl = if app.monthly_inspector_open {
-                            "Ocultar panel"
-                        } else {
-                            "Ver panel"
-                        };
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new(insp_lbl).size(11.5).color(p.ink_secondary),
-                                )
-                                .fill(p.bg_elevated)
-                                .rounding(Rounding::same(Radius::SM)),
-                            )
-                            .clicked()
-                        {
-                            app.monthly_inspector_open = !app.monthly_inspector_open;
-                        }
-                    });
-                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // Inner left-to-right keeps pills in exact order: Todas, Trabajo, Personal, Estudio, Salud
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(ui.available_width(), 28.0),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.add_space((ui.available_width() - 340.0).max(0.0));
+                            views::category_filter_pills(ui, &mut app.category_filter, p);
+                        },
+                    );
+                });
             });
         });
 
@@ -158,12 +171,12 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     let total_cells = first_wd + total_days;
     let rows = total_cells.div_ceil(7).max(5);
 
-    let gap = 6.0_f32;
-    let header_h = 24.0_f32;
+    let gap = 8.0_f32;
+    let header_h = 26.0_f32;
     let col_w = ((grid_w - gap * 6.0) / 7.0).floor().max(64.0);
     let row_h = ((avail_h - header_h - gap * rows as f32) / rows as f32)
         .floor()
-        .max(72.0);
+        .max(76.0);
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
@@ -281,6 +294,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 .filter(|occ| !occ.task.done)
                 .max_by_key(|occ| occ.task.priority);
 
+            let is_weekend = col >= 5;
             let bg = if in_drag_range {
                 p.accent_soft
             } else if let Some(occ) = dominant_pending {
@@ -291,10 +305,12 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 p.bg_cell_selected
             } else if response.hovered() || plus_resp.hovered() {
                 p.bg_cell_hover
+            } else if is_weekend {
+                p.bg_cell_muted
             } else {
                 p.bg_surface
             };
-            painter.rect_filled(cell_rect, Rounding::same(8.0), bg);
+            painter.rect_filled(cell_rect, Rounding::same(Radius::MD), bg);
 
             // Day number + HOY pill (tabular monospace)
             let num_pos = cell_rect.min + Vec2::new(10.0, 8.0);
@@ -329,9 +345,9 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
             }
 
             // Up to 3 compact blocks per cell (color dot + time + truncated title) + clickable "+N más"
-            let chip_h = 18.0_f32;
-            let chip_gap = 3.0_f32;
-            let max_preview = ((row_h - 36.0) / (chip_h + chip_gap))
+            let chip_h = 20.0_f32;
+            let chip_gap = 4.0_f32;
+            let max_preview = ((row_h - 38.0) / (chip_h + chip_gap))
                 .floor()
                 .clamp(1.0, 3.0) as usize;
 
@@ -354,7 +370,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     views::task_colors(task.color, &task.tag, task.priority, p)
                 };
 
-                painter.rect_filled(chip_rect, Rounding::same(4.0), chip_bg);
+                painter.rect_filled(chip_rect, Rounding::same(Radius::SM), chip_bg);
                 painter.circle_filled(
                     egui::pos2(chip_rect.min.x + 7.0, chip_rect.center().y),
                     3.0,
@@ -628,80 +644,48 @@ fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                 if changed {
                     app.persist();
                 }
-            });
 
-        ui.add_space(12.0);
+                ui.add_space(Spacing::SM);
+                ui.separator();
+                ui.add_space(Spacing::XS);
 
-        // Agregar Rápido card (fixed sizing so nothing clips!)
-        egui::Frame::none()
-            .fill(p.bg_surface)
-            .stroke(Stroke::new(1.0_f32, p.border_subtle))
-            .rounding(Rounding::same(12.0))
-            .inner_margin(14.0)
-            .show(ui, |ui| {
-                ui.label(
-                    RichText::new("Agregar Rápido")
-                        .size(15.0)
-                        .strong()
-                        .color(p.ink_primary),
-                );
-                ui.add_space(6.0);
-
-                let title_resp = ui.add(
-                    egui::TextEdit::singleline(&mut app.new_title)
-                        .hint_text("¿Qué tienes planeado?")
-                        .desired_width(f32::INFINITY),
-                );
-
-                ui.add_space(6.0);
-                egui::ComboBox::from_id_salt("quick_tag")
-                    .selected_text(if app.new_tag.is_empty() {
-                        "Categoría"
-                    } else {
-                        &app.new_tag
-                    })
-                    .width(ui.available_width())
-                    .show_ui(ui, |ui| {
-                        for cat in TAG_PRESETS {
-                            ui.selectable_value(&mut app.new_tag, cat.to_owned(), cat);
-                        }
-                    });
-
-                ui.add_space(6.0);
-                views::schedule_and_recurrence_controls(
-                    ui,
-                    &mut app.new_all_day,
-                    &mut app.new_time,
-                    &mut app.new_end_time,
-                    &mut app.new_recurrence,
-                    p,
-                );
-
-                ui.add_space(8.0);
-                let submit = (title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                    || ui
+                // Compact inline quick-add bar (keeps inspector clean & gives Notes generous room)
+                ui.horizontal(|ui| {
+                    let add_w = (ui.available_width() - 74.0).max(100.0);
+                    let title_resp = ui.add_sized(
+                        Vec2::new(add_w, 30.0),
+                        egui::TextEdit::singleline(&mut app.new_title)
+                            .hint_text(format!("Añadir en {}...", month_short_es(date.month))),
+                    );
+                    let enter = title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                    let add_clicked = ui
                         .add(
-                            egui::Button::new(
-                                RichText::new(format!(
-                                    "+ Guardar en {}",
-                                    month_name_es(date.month)
-                                ))
-                                .size(12.5)
-                                .strong()
-                                .color(Color32::WHITE),
-                            )
-                            .fill(p.accent)
-                            .stroke(Stroke::NONE)
-                            .min_size(Vec2::new(ui.available_width(), 34.0)),
+                            egui::Button::new(RichText::new("+").size(14.0).strong().color(Color32::WHITE))
+                                .fill(p.accent)
+                                .rounding(Rounding::same(Radius::SM))
+                                .min_size(Vec2::new(30.0, 30.0)),
                         )
+                        .on_hover_text("Guardar tarea rápida")
                         .clicked();
-
-                if submit && app.submit_draft(date) {
-                    title_resp.request_focus();
-                }
+                    if (add_clicked || enter) && app.submit_draft(date) {
+                        title_resp.request_focus();
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("•••").size(12.0).color(p.ink_secondary))
+                                .fill(p.bg_elevated)
+                                .rounding(Rounding::same(Radius::SM))
+                                .min_size(Vec2::new(32.0, 30.0)),
+                        )
+                        .on_hover_text("Abrir formulario completo")
+                        .clicked()
+                    {
+                        app.show_new_task_modal = true;
+                    }
+                });
             });
 
-        ui.add_space(12.0);
+        ui.add_space(Spacing::MD);
 
         // Notas Rápidas del Día (autoguardado con debounce)
         egui::Frame::none()
@@ -741,7 +725,7 @@ fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                     let resp = ui.add(
                         egui::TextEdit::multiline(note)
                             .hint_text("Apuntes rápidos de este día...")
-                            .desired_rows(3)
+                            .desired_rows(6)
                             .desired_width(f32::INFINITY),
                     );
                     if resp.changed() {
