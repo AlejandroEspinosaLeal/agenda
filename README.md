@@ -5,7 +5,7 @@
 
   ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
   ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-  ![Version](https://img.shields.io/badge/Version-1.2.2-4338CA)
+  ![Version](https://img.shields.io/badge/Version-1.2.3-4338CA)
 
   <p><strong>English</strong> | <a href="README.es.md">Español</a></p>
 </div>

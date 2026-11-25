@@ -1,13 +1,12 @@
 use eframe::egui::{
-    self, Align, Color32, FontId, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2,
+    self, Align, Color32, FontId, Layout, RichText, Rounding, Sense, Stroke, Vec2,
 };
 
 use crate::app::{AgendaApp, GridCreateDrag};
 use crate::calendar::{month_name_es, month_short_es, weekday_name_es, Date};
-use crate::model::Priority;
 use crate::theme::{Palette, Radius, Spacing};
 use crate::timeblock::{self, TimeInterval};
-use crate::views::{self, COLOR_PRESETS, TAG_PRESETS};
+use crate::views;
 
 const HOUR_HEIGHT: f32 = 52.0;
 
@@ -112,7 +111,7 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
     ui.add_space(Spacing::MD);
 
     let avail = ui.available_size();
-    let right_w = if app.focus_mode { 0.0 } else { 340.0 };
+    let right_w = if app.focus_mode { 0.0 } else { (avail.x * 0.25).clamp(250.0, 300.0) };
     let left_w = (avail.x - if app.focus_mode { 0.0 } else { right_w + Spacing::LG }).max(420.0);
 
     ui.horizontal_top(|ui| {
@@ -161,7 +160,18 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                 }
 
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    views::category_filter_pills(ui, &mut app.category_filter, p);
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(ui.available_width(), 28.0),
+                                        Layout::left_to_right(Align::Center),
+                                        |ui| {
+                                            ui.add_space((ui.available_width() - 340.0).max(0.0));
+                                            views::category_filter_pills(
+                                                ui,
+                                                &mut app.category_filter,
+                                                p,
+                                            );
+                                        },
+                                    );
                                 });
                             });
 
@@ -670,211 +680,16 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
             },
         );
 
-        // Columna derecha: Nueva Tarea para Hoy + Notas Rápidas del Día
+        // Columna derecha: mismo Inspector Contextual unificado que en Mensual
         if !app.focus_mode {
-            ui.add_space(Spacing::LG);
+            ui.add_space(Spacing::MD);
             ui.allocate_ui_with_layout(
                 Vec2::new(right_w, avail.y),
                 Layout::top_down(Align::Min),
                 |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        render_daily_right_column(app, ui, p, date);
-                    });
+                    views::monthly::render_inspector(app, ui, p);
                 },
             );
         }
     });
-}
-
-fn render_daily_right_column(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, date: Date) {
-    // Tarjeta 1: Nueva Tarea para Hoy
-    egui::Frame::none()
-        .fill(p.bg_surface)
-        .stroke(Stroke::new(1.0_f32, p.border_subtle))
-        .rounding(Rounding::same(Radius::LG))
-        .inner_margin(14.0)
-        .show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Nueva Tarea para Hoy")
-                            .size(15.0)
-                            .strong()
-                            .color(p.ink_primary),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(format!(
-                                "{} {}",
-                                date.day,
-                                month_short_es(date.month).to_uppercase()
-                            ))
-                            .size(11.0)
-                            .monospace()
-                            .color(p.ink_muted),
-                        );
-                    });
-                });
-
-                ui.add_space(6.0);
-                let title_resp = ui.add(
-                    egui::TextEdit::singleline(&mut app.new_title)
-                        .hint_text("ej. Comprar billetes de tren")
-                        .desired_width(f32::INFINITY),
-                );
-
-                ui.add_space(4.0);
-                ui.add(
-                    egui::TextEdit::singleline(&mut app.new_notes)
-                        .hint_text("Nota corta (opcional)")
-                        .desired_width(f32::INFINITY),
-                );
-
-                ui.add_space(6.0);
-                views::schedule_and_recurrence_controls(
-                    ui,
-                    &mut app.new_all_day,
-                    &mut app.new_time,
-                    &mut app.new_end_time,
-                    &mut app.new_recurrence,
-                    p,
-                );
-
-                ui.add_space(6.0);
-                ui.horizontal_wrapped(|ui| {
-                    for cat in TAG_PRESETS {
-                        let sel = app.new_tag == cat;
-                        let tok = p.category_token(cat);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new(cat)
-                                        .size(11.0)
-                                        .strong()
-                                        .color(if sel { Color32::WHITE } else { tok.text }),
-                                )
-                                .fill(if sel { tok.solid } else { tok.bg })
-                                .stroke(Stroke::new(
-                                    1.0_f32,
-                                    if sel { tok.solid } else { tok.border },
-                                )),
-                            )
-                            .clicked()
-                        {
-                            app.new_tag = if sel { String::new() } else { cat.to_owned() };
-                        }
-                    }
-                });
-
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    for prio in [Priority::Low, Priority::Normal, Priority::High] {
-                        let sel = app.new_priority == prio;
-                        let (fg, bg) = views::priority_colors(prio, p);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new(prio.label_es())
-                                        .size(11.0)
-                                        .color(if sel { fg } else { p.ink_secondary }),
-                                )
-                                .fill(if sel { bg } else { p.bg_elevated }),
-                            )
-                            .clicked()
-                        {
-                            app.new_priority = prio;
-                        }
-                    }
-                    for preset in COLOR_PRESETS.iter().take(4) {
-                        let c = Color32::from_rgb(preset[0], preset[1], preset[2]);
-                        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::click());
-                        ui.painter().circle_filled(rect.center(), 6.0, c);
-                        if app.new_color == Some(*preset) {
-                            ui.painter().circle_stroke(
-                                rect.center(),
-                                7.5,
-                                Stroke::new(1.5_f32, p.ink_primary),
-                            );
-                        }
-                        if resp.clicked() {
-                            app.new_color = Some(*preset);
-                        }
-                    }
-                });
-
-                ui.add_space(8.0);
-                let submit = (title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                    || ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("+ Guardar en mi Agenda")
-                                    .size(13.0)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(p.accent)
-                            .stroke(Stroke::NONE)
-                            .min_size(Vec2::new(ui.available_width(), 34.0)),
-                        )
-                        .clicked();
-                if submit && app.submit_draft(date) {
-                    title_resp.request_focus();
-                }
-            });
-        });
-
-    ui.add_space(12.0);
-
-    // Tarjeta 2: Notas Rápidas del Día (autoguardado con debounce de 600ms)
-    egui::Frame::none()
-        .fill(p.bg_surface)
-        .stroke(Stroke::new(1.0_f32, p.border_subtle))
-        .rounding(Rounding::same(Radius::LG))
-        .inner_margin(14.0)
-        .show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.label(
-                    RichText::new("Notas Rápidas del Día")
-                        .size(14.5)
-                        .strong()
-                        .color(p.ink_primary),
-                );
-                ui.add_space(6.0);
-                let key = date.to_key();
-                let note = app.store.daily_notes.entry(key).or_default();
-                let resp = ui.add(
-                    egui::TextEdit::multiline(note)
-                        .hint_text("Escribe notas rápidas para este día...")
-                        .desired_rows(4)
-                        .desired_width(f32::INFINITY),
-                );
-                if resp.changed() {
-                    app.mark_notes_dirty();
-                }
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    let status_txt = if app.notes_dirty_at.is_some() {
-                        "Guardando..."
-                    } else {
-                        "Sincronizado"
-                    };
-                    ui.label(
-                        RichText::new("Guardado automático")
-                            .size(10.5)
-                            .color(p.ink_muted),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(status_txt)
-                                .size(10.5)
-                                .color(if app.notes_dirty_at.is_some() {
-                                    p.accent
-                                } else {
-                                    p.done_green
-                                }),
-                        );
-                    });
-                });
-            });
-        });
 }

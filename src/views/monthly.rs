@@ -470,7 +470,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     }
 }
 
-fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
+pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
     let date = app.selected_date;
     let wd_name = weekday_name_es(date.weekday_monday_zero());
     let occurrences: Vec<_> = app
