@@ -105,3 +105,58 @@ organizador_tareas/
 | `F` | Activar / Salir de Modo Enfoque |
 | `←` / `→` | Mes, semana o día anterior / siguiente |
 | `Esc` | Cerrar paleta, modal, guía, Modo Enfoque o inspector |
+
+---
+
+## Diagrama de flujo de la aplicación
+
+```mermaid
+flowchart TD
+    Start["Inicio: main.rs (comprueba --autostart)"] --> Load["AgendaApp::new()"]
+    Load --> LoadData["TaskStore::load() desde %LOCALAPPDATA%\\organizador_tareas\\tareas.dat"]
+    LoadData --> Migrate{"¿schema_version antiguo (v1)?"}
+    Migrate -- "Sí" --> DoMigrate["Migra v1 -> v2 (NaiveDate/NaiveTime)"]
+    Migrate -- "No" --> InitServices
+    DoMigrate --> InitServices["Inicia TrayController + Updater + ThemePreset"]
+
+    InitServices --> FirstRun{"¿onboarding_completed == false?"}
+    FirstRun -- "Sí" --> Tour["Muestra Tour Interactivo con Spotlight (8 pasos)"]
+    FirstRun -- "No" --> DailyNotif
+    Tour --> DailyNotif{"¿Ya notificado hoy?"}
+    DailyNotif -- "No" --> Toast["Envía Toast nativo de Windows + guarda last_notified_date"]
+    DailyNotif -- "Sí" --> MainLoop
+
+    Toast --> MainLoop["Bucle principal: eframe::App::update()"]
+
+    MainLoop --> UpdaterCheck["Updater: al iniciar y cada 5 min consulta GitHub Releases"]
+    UpdaterCheck --> NewVer{"¿Versión en GitHub > local?"}
+    NewVer -- "Sí" --> Download["Descarga Mi_Agenda_Setup.exe en %TEMP%"]
+    Download --> RunSetup["Ejecuta /SILENT /FORCECLOSEAPPLICATIONS + taskkill"]
+    RunSetup --> Relaunch["Instala y reabre Mi Agenda actualizada (conserva tareas.dat)"]
+    NewVer -- "No" --> UIRender
+
+    MainLoop --> DayChange{"¿Cambió de día (medianoche)?"}
+    DayChange -- "Sí" --> Toast
+    DayChange -- "No" --> UIRender
+
+    UIRender["Renderizado UI (Paleta + Claro/Oscuro)"] --> FocusCheck{"¿Modo Enfoque activo (F)?"}
+    FocusCheck -- "Sí" --> FocusView["Focus Workspace: Pomodoro 25/5, 50/10 o Restante + Notas (tick 1s solo si corre)"]
+    FocusCheck -- "No" --> ActiveView{"Vista activa"}
+
+    ActiveView -- "M (Mensual)" --> Monthly["Vista Mensual: rango multi-día por arrastre + Inspector + Notas"]
+    ActiveView -- "W (Semanal)" --> Weekly["Vista Semanal: Modo Horario / Tablero + Exportar (.md / .ics / .txt)"]
+    ActiveView -- "D (Diaria)" --> Daily["Agenda Diaria: Grid 06:00-23:00/24h + Solapamientos + Inspector"]
+
+    UIRender --> Actions["Acciones rápidas del usuario"]
+    Actions -- "Ctrl+K" --> Palette["Command Palette: búsqueda, comandos y parser NL (nlp.rs)"]
+    Actions -- "+ Nueva Tarea / Arrastre" --> Modal["Modal moderno: título, horario, recurrencia, categoría, prioridad, color"]
+    Actions -- "Backlog lateral" --> DragDrop["Arrastrar tarea sin hora a franja de Diaria o Semanal"]
+
+    Palette --> Persist["TaskStore::save() cifrado OTSK (debounce 600ms en notas)"]
+    Modal --> Persist
+    DragDrop --> Persist
+    Monthly --> Persist
+    Daily --> Persist
+    FocusView --> Persist
+    Persist --> TraySync["Actualiza badge numérico de la bandeja del sistema"]
+```

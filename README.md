@@ -105,3 +105,58 @@ organizador_tareas/
 | `F` | Toggle Focus Mode |
 | `←` / `→` | Previous / next month, week, or day |
 | `Esc` | Close Command Palette, modal, tour, Focus Mode, or inspector |
+
+---
+
+## Application Flowchart
+
+```mermaid
+flowchart TD
+    Start["Start: main.rs (checks --autostart)"] --> Load["AgendaApp::new()"]
+    Load --> LoadData["TaskStore::load() from %LOCALAPPDATA%\\organizador_tareas\\tareas.dat"]
+    LoadData --> Migrate{"Legacy v1 schema?"}
+    Migrate -- "Yes" --> DoMigrate["Migrate v1 -> v2 (NaiveDate/NaiveTime)"]
+    Migrate -- "No" --> InitServices
+    DoMigrate --> InitServices["Init TrayController + Updater + ThemePreset"]
+
+    InitServices --> FirstRun{"onboarding_completed == false?"}
+    FirstRun -- "Yes" --> Tour["Show Interactive Spotlight Tour (8 steps)"]
+    FirstRun -- "No" --> DailyNotif
+    Tour --> DailyNotif{"Notified today?"}
+    DailyNotif -- "No" --> Toast["Send Windows Toast + save last_notified_date"]
+    DailyNotif -- "Yes" --> MainLoop
+
+    Toast --> MainLoop["Main loop: eframe::App::update()"]
+
+    MainLoop --> UpdaterCheck["Updater: on launch and every 5 min check GitHub Releases"]
+    UpdaterCheck --> NewVer{"GitHub version > local?"}
+    NewVer -- "Yes" --> Download["Download Mi_Agenda_Setup.exe to %TEMP%"]
+    Download --> RunSetup["Run /SILENT /FORCECLOSEAPPLICATIONS + taskkill"]
+    RunSetup --> Relaunch["Install and relaunch updated Mi Agenda (keeps tareas.dat)"]
+    NewVer -- "No" --> UIRender
+
+    MainLoop --> DayChange{"Day changed (midnight)?"}
+    DayChange -- "Yes" --> Toast
+    DayChange -- "No" --> UIRender
+
+    UIRender["Render UI (Palette + Light/Dark)"] --> FocusCheck{"Focus Mode active (F)?"}
+    FocusCheck -- "Yes" --> FocusView["Focus Workspace: Pomodoro 25/5, 50/10 or Remaining + Notes (1s tick only when running)"]
+    FocusCheck -- "No" --> ActiveView{"Active view"}
+
+    ActiveView -- "M (Monthly)" --> Monthly["Monthly View: multi-day drag range + Inspector + Notes"]
+    ActiveView -- "W (Weekly)" --> Weekly["Weekly View: Schedule / Board mode + Export (.md / .ics / .txt)"]
+    ActiveView -- "D (Daily)" --> Daily["Daily Schedule: 06:00-23:00/24h grid + Overlaps + Inspector"]
+
+    UIRender --> Actions["Quick user actions"]
+    Actions -- "Ctrl+K" --> Palette["Command Palette: search, commands, and NL parser (nlp.rs)"]
+    Actions -- "+ New Task / Drag" --> Modal["Modern modal: title, schedule, recurrence, category, priority, color"]
+    Actions -- "Sidebar Backlog" --> DragDrop["Drag unscheduled task onto Daily or Weekly time slot"]
+
+    Palette --> Persist["TaskStore::save() OTSK encrypted (600ms debounce for notes)"]
+    Modal --> Persist
+    DragDrop --> Persist
+    Monthly --> Persist
+    Daily --> Persist
+    FocusView --> Persist
+    Persist --> TraySync["Sync Windows tray icon pending badge"]
+```
