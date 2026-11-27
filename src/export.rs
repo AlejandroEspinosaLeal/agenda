@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 
 use crate::calendar::{month_short_es, Date};
 use crate::model::{AgendaItem, Recurrence, Schedule, TaskStore};
@@ -77,22 +77,27 @@ fn append_vevent(out: &mut String, item: &AgendaItem, dtstamp: &str) {
     match item.schedule {
         Schedule::AllDay => {
             let start = item.start_date.format("%Y%m%d");
-            let end_date = item.start_date
-                + chrono::Duration::days(i64::from(item.span_days.max(1)));
+            let end_date =
+                item.start_date + chrono::Duration::days(i64::from(item.span_days.max(1)));
             out.push_str(&format!("DTSTART;VALUE=DATE:{start}\r\n"));
-            out.push_str(&format!("DTEND;VALUE=DATE:{}\r\n", end_date.format("%Y%m%d")));
+            out.push_str(&format!(
+                "DTEND;VALUE=DATE:{}\r\n",
+                end_date.format("%Y%m%d")
+            ));
         }
         Schedule::TimeRange { start, end } => {
             let d_str = item.start_date.format("%Y%m%d");
             let s_str = start.format("%H%M%S");
-            let e_time = if end > start {
-                end
-            } else {
-                start + chrono::Duration::minutes(30)
-            };
-            let e_str = e_time.format("%H%M%S");
+            // DTEND must be strictly after DTSTART. Multi-day items end on their
+            // last covered day; a night block (end <= start) crosses midnight.
+            let span_offset = i64::from(item.span_days.max(1) - 1);
+            let mut end_date = item.start_date + Duration::days(span_offset);
+            if end <= start {
+                end_date += Duration::days(1);
+            }
+            let e_str = end.format("%H%M%S");
             out.push_str(&format!("DTSTART:{d_str}T{s_str}\r\n"));
-            out.push_str(&format!("DTEND:{d_str}T{e_str}\r\n"));
+            out.push_str(&format!("DTEND:{}T{e_str}\r\n", end_date.format("%Y%m%d")));
         }
     }
 
@@ -178,6 +183,85 @@ mod tests {
         assert!(ics.contains("RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR\r\n"));
         assert!(ics.contains("SUMMARY:Deep Work\\, Rust\r\n"));
         assert!(ics.ends_with("END:VCALENDAR\r\n"));
+    }
+
+    #[test]
+    fn export_ics_should_roll_dtend_to_next_day_when_crossing_midnight() {
+        let mut store = TaskStore::default();
+        store.add_task(
+            Date::new(2026, 11, 23),
+            TaskDraft {
+                title: "Guardia nocturna",
+                notes: "",
+                time: "23:30",
+                end_time: "00:30",
+                location: "",
+                tag: "",
+                span_days: 1,
+                recurrence: Recurrence::None,
+                color: None,
+                priority: Priority::Normal,
+            },
+        );
+        let ics = export_ics(&store);
+        assert!(ics.contains("DTSTART:20261123T233000\r\n"));
+        assert!(
+            ics.contains("DTEND:20261124T003000\r\n"),
+            "el fin nocturno debe caer al día siguiente: {ics}"
+        );
+    }
+
+    #[test]
+    fn export_ics_should_keep_dtend_after_dtstart_for_equal_and_multi_day_ranges() {
+        let mut store = TaskStore::default();
+        // Zero-length-looking range must still produce DTEND > DTSTART.
+        store.add_task(
+            Date::new(2026, 11, 23),
+            TaskDraft {
+                title: "Rango igual",
+                notes: "",
+                time: "08:00",
+                end_time: "08:00",
+                location: "",
+                tag: "",
+                span_days: 1,
+                recurrence: Recurrence::None,
+                color: None,
+                priority: Priority::Normal,
+            },
+        );
+        // Multi-day timed item ends on its last covered day.
+        store.add_task(
+            Date::new(2026, 11, 23),
+            TaskDraft {
+                title: "Congreso",
+                notes: "",
+                time: "09:00",
+                end_time: "18:00",
+                location: "",
+                tag: "",
+                span_days: 3,
+                recurrence: Recurrence::None,
+                color: None,
+                priority: Priority::Normal,
+            },
+        );
+        let ics = export_ics(&store);
+        assert!(ics.contains("DTSTART:20261123T080000\r\n"));
+        assert!(ics.contains("DTEND:20261124T080000\r\n"));
+        assert!(ics.contains("DTSTART:20261123T090000\r\n"));
+        assert!(ics.contains("DTEND:20261125T180000\r\n"));
+
+        // Global invariant: every DTEND timestamp is strictly after its DTSTART.
+        let mut start: Option<&str> = None;
+        for line in ics.split("\r\n") {
+            if let Some(value) = line.strip_prefix("DTSTART:") {
+                start = Some(value);
+            } else if let Some(value) = line.strip_prefix("DTEND:") {
+                let s = start.expect("DTSTART before DTEND");
+                assert!(value > s, "DTEND {value} debe ser posterior a DTSTART {s}");
+            }
+        }
     }
 
     #[test]

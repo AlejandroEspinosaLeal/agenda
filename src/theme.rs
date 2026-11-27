@@ -84,6 +84,7 @@ pub struct CategoryToken {
     pub bg: Color32,
     pub border: Color32,
     pub text: Color32,
+    pub on_solid: Color32,
 }
 
 /// Centralized design tokens for Light and Dark modes (WCAG AA compliant).
@@ -103,6 +104,12 @@ pub struct Palette {
     pub ink_muted: Color32,
     pub accent: Color32,
     pub accent_soft: Color32,
+    /// Readable foreground on top of `accent` (WCAG AA >= 4.5:1).
+    pub on_accent: Color32,
+    /// Readable foreground on top of a category `solid` chip.
+    pub on_solid: Color32,
+    /// Readable foreground on top of `priority_high`.
+    pub on_priority_high: Color32,
     pub priority_high: Color32,
     pub priority_high_bg: Color32,
     pub priority_normal: Color32,
@@ -139,24 +146,27 @@ impl Palette {
     /// Clarity Suite editorial light theme (`#F8F9FC` canvas, `#4338CA` indigo primary).
     pub const LIGHT: Self = Self {
         dark: false,
-        bg_canvas: Color32::from_rgb(248, 249, 252),     // #F8F9FC
-        bg_surface: Color32::from_rgb(255, 255, 255),    // #FFFFFF
-        bg_elevated: Color32::from_rgb(238, 237, 247),   // #EEEDF7
+        bg_canvas: Color32::from_rgb(248, 249, 252), // #F8F9FC
+        bg_surface: Color32::from_rgb(255, 255, 255), // #FFFFFF
+        bg_elevated: Color32::from_rgb(238, 237, 247), // #EEEDF7
         bg_cell_hover: Color32::from_rgb(244, 242, 253), // #F4F2FD
         bg_cell_selected: Color32::from_rgb(227, 223, 255),
         bg_cell_muted: Color32::from_rgb(244, 242, 250),
-        border: Color32::from_rgb(199, 196, 215),        // #C7C4D7
+        border: Color32::from_rgb(199, 196, 215), // #C7C4D7
         border_subtle: Color32::from_rgb(228, 228, 231), // #E4E4E7
-        ink_primary: Color32::from_rgb(9, 9, 11),        // #09090B (>18:1 on white)
-        ink_secondary: Color32::from_rgb(63, 63, 76),    // #3F3F4C (>9:1 on white)
-        ink_muted: Color32::from_rgb(96, 96, 108),       // #60606C (>5.8:1 WCAG AA)
-        accent: Color32::from_rgb(67, 56, 202),          // #4338CA (>7.5:1 on white)
-        accent_soft: Color32::from_rgb(227, 223, 255),   // #E3DFFF
-        priority_high: Color32::from_rgb(185, 5, 56),    // #B90538
+        ink_primary: Color32::from_rgb(9, 9, 11), // #09090B (>18:1 on white)
+        ink_secondary: Color32::from_rgb(63, 63, 76), // #3F3F4C (>9:1 on white)
+        ink_muted: Color32::from_rgb(96, 96, 108), // #60606C (>5.8:1 WCAG AA)
+        accent: Color32::from_rgb(67, 56, 202),   // #4338CA (>7.5:1 on white)
+        accent_soft: Color32::from_rgb(227, 223, 255), // #E3DFFF
+        on_accent: Color32::WHITE,
+        on_solid: Color32::WHITE,
+        on_priority_high: Color32::WHITE,
+        priority_high: Color32::from_rgb(185, 5, 56), // #B90538
         priority_high_bg: Color32::from_rgb(255, 224, 228),
-        priority_normal: Color32::from_rgb(161, 72, 6),  // #A14806 (WCAG AA)
+        priority_normal: Color32::from_rgb(161, 72, 6), // #A14806 (WCAG AA)
         priority_normal_bg: Color32::from_rgb(254, 243, 199),
-        priority_low: Color32::from_rgb(4, 108, 78),     // #046C4E (WCAG AA)
+        priority_low: Color32::from_rgb(4, 108, 78), // #046C4E (WCAG AA)
         priority_low_bg: Color32::from_rgb(209, 250, 229),
         done_green: Color32::from_rgb(4, 108, 78),
         done_bg: Color32::from_rgb(238, 237, 247),
@@ -165,19 +175,22 @@ impl Palette {
     /// Accessible high-contrast dark theme (WCAG AA compliant).
     pub const DARK: Self = Self {
         dark: true,
-        bg_canvas: Color32::from_rgb(13, 17, 23),        // #0D1117
-        bg_surface: Color32::from_rgb(27, 34, 45),       // #1B222D
-        bg_elevated: Color32::from_rgb(36, 45, 60),      // #242D3C
-        bg_cell_hover: Color32::from_rgb(38, 49, 66),    // #263142
+        bg_canvas: Color32::from_rgb(13, 17, 23),  // #0D1117
+        bg_surface: Color32::from_rgb(27, 34, 45), // #1B222D
+        bg_elevated: Color32::from_rgb(36, 45, 60), // #242D3C
+        bg_cell_hover: Color32::from_rgb(38, 49, 66), // #263142
         bg_cell_selected: Color32::from_rgb(36, 49, 96), // #243160
-        bg_cell_muted: Color32::from_rgb(16, 20, 27),    // #10141B
-        border: Color32::from_rgb(76, 91, 114),          // #4C5B72
-        border_subtle: Color32::from_rgb(48, 59, 77),    // #303B4D
-        ink_primary: Color32::from_rgb(248, 250, 252),   // #F8FAFC (>14:1 on surface)
+        bg_cell_muted: Color32::from_rgb(16, 20, 27), // #10141B
+        border: Color32::from_rgb(76, 91, 114),    // #4C5B72
+        border_subtle: Color32::from_rgb(48, 59, 77), // #303B4D
+        ink_primary: Color32::from_rgb(248, 250, 252), // #F8FAFC (>14:1 on surface)
         ink_secondary: Color32::from_rgb(203, 213, 225), // #CBD5E1 (>9:1 on surface)
-        ink_muted: Color32::from_rgb(148, 163, 184),     // #94A3B8 (>5.5:1 WCAG AA)
-        accent: Color32::from_rgb(129, 140, 248),        // #818CF8 (>5.1:1 on surface)
+        ink_muted: Color32::from_rgb(148, 163, 184), // #94A3B8 (>5.5:1 WCAG AA)
+        accent: Color32::from_rgb(129, 140, 248),  // #818CF8 (>5.1:1 on surface)
         accent_soft: Color32::from_rgb(40, 48, 92),
+        on_accent: Color32::from_rgb(20, 20, 20), // 6.18:1 on accent
+        on_solid: Color32::from_rgb(20, 20, 20),  // >=6.77:1 on category solids
+        on_priority_high: Color32::from_rgb(20, 20, 20), // 7.72:1 on priority_high
         priority_high: Color32::from_rgb(253, 130, 149),
         priority_high_bg: Color32::from_rgb(66, 30, 40),
         priority_normal: Color32::from_rgb(252, 201, 68),
@@ -200,10 +213,10 @@ impl Palette {
             }
         } else {
             match tag {
-                "Trabajo" => Color32::from_rgb(2, 132, 199),
+                "Trabajo" => Color32::from_rgb(3, 105, 161),
                 "Personal" => Color32::from_rgb(109, 40, 217),
                 "Estudio" => Color32::from_rgb(180, 83, 9),
-                "Salud" => Color32::from_rgb(5, 150, 105),
+                "Salud" => Color32::from_rgb(4, 120, 87),
                 _ => self.ink_secondary,
             }
         };
@@ -228,6 +241,7 @@ impl Palette {
             bg: blend_rgb(solid, self.bg_surface, bg_alpha),
             border: blend_rgb(solid, self.bg_surface, border_alpha),
             text,
+            on_solid: self.on_solid,
         }
     }
 }
@@ -310,4 +324,88 @@ fn blend_rgb(fg: Color32, bg: Color32, alpha: f32) -> Color32 {
         blend(fg.g(), bg.g()),
         blend(fg.b(), bg.b()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn channel_luminance(value: u8) -> f32 {
+        let v = f32::from(value) / 255.0;
+        if v <= 0.039_28 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn relative_luminance(color: Color32) -> f32 {
+        0.2126 * channel_luminance(color.r())
+            + 0.7152 * channel_luminance(color.g())
+            + 0.0722 * channel_luminance(color.b())
+    }
+
+    fn contrast_ratio(a: Color32, b: Color32) -> f32 {
+        let la = relative_luminance(a);
+        let lb = relative_luminance(b);
+        let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    #[test]
+    fn dark_palettes_meet_wcag_aa_contrast() {
+        for preset in ThemePreset::ALL {
+            let p = Palette::for_theme(preset, true);
+            assert!(
+                contrast_ratio(p.accent, p.on_accent) >= 4.5,
+                "accent/on_accent fails for {:?}: {:.2}",
+                preset,
+                contrast_ratio(p.accent, p.on_accent)
+            );
+            assert!(
+                contrast_ratio(p.priority_high, p.on_priority_high) >= 4.5,
+                "priority_high/on_priority_high fails for {:?}",
+                preset
+            );
+            for tag in ["Trabajo", "Personal", "Estudio", "Salud"] {
+                let tok = p.category_token(tag);
+                assert!(
+                    contrast_ratio(tok.solid, tok.on_solid) >= 4.5,
+                    "{} solid/on_solid fails for {:?}: {:.2}",
+                    tag,
+                    preset,
+                    contrast_ratio(tok.solid, tok.on_solid)
+                );
+                assert!(
+                    contrast_ratio(tok.text, tok.bg) >= 4.5,
+                    "{} text/bg fails for {:?}: {:.2}",
+                    tag,
+                    preset,
+                    contrast_ratio(tok.text, tok.bg)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn light_palettes_and_category_chips_meet_wcag_aa() {
+        for preset in ThemePreset::ALL {
+            let p = Palette::for_theme(preset, false);
+            assert!(
+                contrast_ratio(p.accent, p.on_accent) >= 4.5,
+                "light accent/on_accent fails for {:?}: {:.2}",
+                preset,
+                contrast_ratio(p.accent, p.on_accent)
+            );
+            for tag in ["Trabajo", "Personal", "Estudio", "Salud"] {
+                let tok = p.category_token(tag);
+                assert!(
+                    contrast_ratio(tok.solid, tok.on_solid) >= 4.5,
+                    "{} light solid/on_solid fails: {:.2}",
+                    tag,
+                    contrast_ratio(tok.solid, tok.on_solid)
+                );
+            }
+        }
+    }
 }

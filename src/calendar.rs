@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use chrono::Datelike;
 
 /// Simple calendar date (year, month 1..=12, day 1..=31).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,14 +30,10 @@ impl Date {
             - days_from_civil(self.year, self.month, self.day)
     }
 
-    /// Returns today's date (UTC-based via `SystemTime`).
+    /// Returns today's date in the system's local timezone (`chrono::Local`).
     pub fn today() -> Self {
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let days = secs.div_euclid(86_400);
-        civil_from_days(days)
+        let local = chrono::Local::now().date_naive();
+        Self::new(local.year(), local.month() as u8, local.day() as u8)
     }
 }
 
@@ -216,6 +212,18 @@ mod tests {
         let d = Date::new(2026, 12, 29);
         let next_week = d.add_days(6);
         assert_eq!(next_week, Date::new(2027, 1, 4));
+    }
+
+    #[test]
+    fn today_should_follow_local_time_not_utc() {
+        let local = chrono::Local::now().date_naive();
+        let today = Date::today();
+        assert_eq!(today.year, local.year());
+        assert_eq!(u32::from(today.month), local.month());
+        assert_eq!(u32::from(today.day), local.day());
+        // Sanity: the value must be a real calendar date.
+        assert!((1..=12).contains(&today.month));
+        assert!(today.day >= 1 && today.day <= days_in_month(today.year, today.month));
     }
 
     #[test]

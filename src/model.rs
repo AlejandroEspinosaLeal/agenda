@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -279,6 +279,12 @@ pub struct TaskStore {
     pub theme_preset: ThemePreset,
     #[serde(default)]
     pub dark_mode: bool,
+    /// Per-occurrence completion state for recurring items: item id -> occurrence dates done.
+    #[serde(default)]
+    pub occurrence_done: BTreeMap<u64, BTreeSet<NaiveDate>>,
+    /// Per-occurrence skipped (deleted) dates for recurring items.
+    #[serde(default)]
+    pub occurrence_skipped: BTreeMap<u64, BTreeSet<NaiveDate>>,
 }
 
 const fn default_next_id() -> u64 {
@@ -297,6 +303,8 @@ impl Default for TaskStore {
             onboarding_completed: false,
             theme_preset: ThemePreset::Indigo,
             dark_mode: false,
+            occurrence_done: BTreeMap::new(),
+            occurrence_skipped: BTreeMap::new(),
         }
     }
 }
@@ -319,10 +327,27 @@ impl TaskStore {
     }
 
     /// Loads tasks from `path`, migrating legacy v1 stores or `tareas.json` without panicking.
+    ///
+    /// A corrupt payload or an unknown `schema_version` is copied to
+    /// `<path>.corrupt.bak` (timestamped suffix if that name is taken) before the
+    /// caller gets an empty store, so the damaged bytes are never lost.
     pub fn load(path: &Path) -> io::Result<Self> {
         match fs::read(path) {
-            Ok(bytes) => decode_store(&bytes),
+            Ok(bytes) => match decode_store(&bytes) {
+                Ok(mut store) => {
+                    store.reconcile_next_id();
+                    Ok(store)
+                }
+                Err(_) => {
+                    let _ = preserve_corrupt_file(path);
+                    Ok(Self::default())
+                }
+            },
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                if let Some(mut backup) = Self::try_load_backup(path) {
+                    backup.reconcile_next_id();
+                    return Ok(backup);
+                }
                 if let Some(migrated) = Self::try_migrate_legacy_json(path) {
                     return Ok(migrated);
                 }
@@ -332,18 +357,46 @@ impl TaskStore {
         }
     }
 
+    /// Attempts to recover the last good payload from `<path>.bak`.
+    fn try_load_backup(path: &Path) -> Option<Self> {
+        let bytes = fs::read(sibling_with_suffix(path, ".bak")).ok()?;
+        let mut store = decode_store(&bytes).ok()?;
+        store.schema_version = CURRENT_SCHEMA_VERSION;
+        store.reconcile_next_id();
+        Some(store)
+    }
+
+    /// Ensures `next_id` is always greater than the highest real item id.
+    fn reconcile_next_id(&mut self) {
+        let min_next = self
+            .items
+            .iter()
+            .map(|item| item.id)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        if self.next_id < min_next {
+            self.next_id = min_next;
+        }
+        if self.next_id == 0 {
+            self.next_id = 1;
+        }
+    }
+
     fn try_migrate_legacy_json(target_path: &Path) -> Option<Self> {
         let exe = std::env::current_exe().ok()?;
         let legacy = exe.parent()?.join("tareas.json");
         let raw = fs::read_to_string(&legacy).ok()?;
-        let store = parse_any_store_json(raw.as_bytes()).ok()?;
+        let mut store = parse_any_store_json(raw.as_bytes()).ok()?;
+        store.reconcile_next_id();
         if store.save(target_path).is_ok() {
             let _ = fs::remove_file(&legacy);
         }
         Some(store)
     }
 
-    /// Saves tasks to `path` in a compact non-plaintext binary format.
+    /// Saves tasks to `path` atomically (`*.tmp` + `sync_all` + rename, rotating
+    /// the previous file to `*.bak` if the platform refuses to replace it).
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -351,21 +404,30 @@ impl TaskStore {
             }
         }
         let encoded = encode_store(self)?;
-        fs::write(path, encoded)
+        write_atomic(path, &encoded)
     }
 
     /// Moves incomplete tasks with `auto_rollover = true` from past dates up to `today`.
+    ///
+    /// Idempotent: a task that still covers `today` through its `span_days` is left
+    /// untouched, and recurring series are never re-anchored (their past
+    /// occurrences are historical; skipping happens per date).
     #[allow(dead_code)]
     pub fn rollover_overdue(&mut self, today: NaiveDate) -> bool {
         let mut changed = false;
         for item in &mut self.items {
+            if item.recurrence != Recurrence::None {
+                continue;
+            }
             if let ItemKind::Task {
                 completed: false,
                 auto_rollover: true,
                 ..
             } = item.kind
             {
-                if item.start_date < today && item.recurrence == Recurrence::None {
+                let span = i64::from(item.span_days.max(1));
+                let last_day = item.start_date + Duration::days(span - 1);
+                if item.start_date < today && last_day < today {
                     item.start_date = today;
                     changed = true;
                 }
@@ -374,13 +436,32 @@ impl TaskStore {
         changed
     }
 
+    /// Returns `true` if the occurrence of `item` on `target` is completed.
+    fn is_done_on(&self, item: &AgendaItem, target: NaiveDate) -> bool {
+        if item.recurrence == Recurrence::None {
+            return item.is_completed();
+        }
+        match self.occurrence_done.get(&item.id) {
+            Some(done) if !done.is_empty() => done.contains(&target),
+            // Legacy whole-series completion written by older versions.
+            _ => item.is_completed(),
+        }
+    }
+
+    /// Returns `true` if the occurrence of `item` on `target` was skipped/deleted.
+    fn is_skipped_on(&self, item: &AgendaItem, target: NaiveDate) -> bool {
+        item.recurrence != Recurrence::None
+            && self
+                .occurrence_skipped
+                .get(&item.id)
+                .is_some_and(|dates| dates.contains(&target))
+    }
+
     /// Returns pending `AllDay` tasks (backlog without assigned time).
     pub fn unscheduled_backlog(&self) -> Vec<TaskOccurrence> {
         self.items
             .iter()
-            .filter(|item| {
-                !item.is_completed() && matches!(item.schedule, Schedule::AllDay)
-            })
+            .filter(|item| !item.is_completed() && matches!(item.schedule, Schedule::AllDay))
             .map(|item| TaskOccurrence {
                 start_date: from_naive_date(item.start_date),
                 task: item.to_view_task(),
@@ -388,17 +469,21 @@ impl TaskStore {
             .collect()
     }
 
-    /// Returns all items visible on `date`.
+    /// Returns all items visible on `date`, with per-occurrence completion state.
     pub fn tasks_visible_on(&self, date: Date) -> Vec<TaskOccurrence> {
         let Some(target) = to_naive_date(date) else {
             return Vec::new();
         };
         self.items
             .iter()
-            .filter(|item| item.covers_date(target))
-            .map(|item| TaskOccurrence {
-                start_date: from_naive_date(item.start_date),
-                task: item.to_view_task(),
+            .filter(|item| item.covers_date(target) && !self.is_skipped_on(item, target))
+            .map(|item| {
+                let mut task = item.to_view_task();
+                task.done = self.is_done_on(item, target);
+                TaskOccurrence {
+                    start_date: from_naive_date(item.start_date),
+                    task,
+                }
             })
             .collect()
     }
@@ -412,6 +497,7 @@ impl TaskStore {
         if trimmed.is_empty() {
             return false;
         }
+        self.reconcile_next_id();
         let id = self.next_id.max(1);
         self.next_id = id + 1;
         let schedule = parse_schedule(draft.time, draft.end_time);
@@ -439,6 +525,7 @@ impl TaskStore {
     /// Adds an item directly (used for Events or recurring Tasks).
     #[allow(dead_code)]
     pub fn add_item(&mut self, mut item: AgendaItem) -> u64 {
+        self.reconcile_next_id();
         let id = self.next_id.max(1);
         self.next_id = id + 1;
         item.id = id;
@@ -446,15 +533,41 @@ impl TaskStore {
         id
     }
 
-    /// Toggles completion state for task `id`.
-    pub fn toggle_task(&mut self, _date: Date, id: u64) -> bool {
-        if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
-            if let ItemKind::Task { completed, .. } = &mut item.kind {
+    /// Toggles completion of the occurrence of task `id` on `date`.
+    ///
+    /// For recurring items only that occurrence changes; the rest of the series
+    /// keeps its own state.
+    pub fn toggle_task(&mut self, date: Date, id: u64) -> bool {
+        let Some(target) = to_naive_date(date) else {
+            return false;
+        };
+        let Some(idx) = self.items.iter().position(|item| item.id == id) else {
+            return false;
+        };
+        if self.items[idx].recurrence == Recurrence::None {
+            if let ItemKind::Task { completed, .. } = &mut self.items[idx].kind {
                 *completed = !*completed;
                 return true;
             }
+            return false;
         }
-        false
+        if !matches!(self.items[idx].kind, ItemKind::Task { .. }) {
+            return false;
+        }
+
+        let was_done = self.is_done_on(&self.items[idx], target);
+        if was_done {
+            // Legacy whole-series flag must not shadow per-occurrence state.
+            if let ItemKind::Task { completed, .. } = &mut self.items[idx].kind {
+                *completed = false;
+            }
+            if let Some(done) = self.occurrence_done.get_mut(&id) {
+                done.remove(&target);
+            }
+        } else {
+            self.occurrence_done.entry(id).or_default().insert(target);
+        }
+        true
     }
 
     /// Updates the custom RGB color for item `id`.
@@ -470,10 +583,34 @@ impl TaskStore {
     }
 
     /// Deletes item `id`.
-    pub fn delete_task(&mut self, _date: Date, id: u64) -> bool {
-        let before = self.items.len();
-        self.items.retain(|i| i.id != id);
-        self.items.len() != before
+    ///
+    /// For recurring items this skips only the occurrence on `date`; the series
+    /// stays intact. Non-recurring items (or dates the series does not cover)
+    /// are removed entirely.
+    pub fn delete_task(&mut self, date: Date, id: u64) -> bool {
+        let Some(target) = to_naive_date(date) else {
+            return false;
+        };
+        let Some(idx) = self.items.iter().position(|item| item.id == id) else {
+            return false;
+        };
+        let skip_occurrence =
+            self.items[idx].recurrence != Recurrence::None && self.items[idx].covers_date(target);
+        if skip_occurrence {
+            let inserted = self
+                .occurrence_skipped
+                .entry(id)
+                .or_default()
+                .insert(target);
+            if let Some(done) = self.occurrence_done.get_mut(&id) {
+                done.remove(&target);
+            }
+            return inserted;
+        }
+        self.items.remove(idx);
+        self.occurrence_done.remove(&id);
+        self.occurrence_skipped.remove(&id);
+        true
     }
 
     /// Updates an item's date and `TimeRange` schedule (in minutes since midnight).
@@ -535,10 +672,7 @@ impl TaskStore {
     }
 
     /// Returns `(total_minutes, category -> (count, minutes))` for the 7-day week starting at `week_monday`.
-    pub fn week_category_stats(
-        &self,
-        week_monday: Date,
-    ) -> (i64, BTreeMap<String, (usize, i64)>) {
+    pub fn week_category_stats(&self, week_monday: Date) -> (i64, BTreeMap<String, (usize, i64)>) {
         let mut total_mins = 0_i64;
         let mut stats: BTreeMap<String, (usize, i64)> = BTreeMap::new();
         for offset in 0..7 {
@@ -625,8 +759,18 @@ struct LegacyTaskStore {
 }
 
 fn parse_any_store_json(raw: &[u8]) -> io::Result<TaskStore> {
-    if let Ok(v2) = serde_json::from_slice::<TaskStore>(raw) {
-        if v2.schema_version >= CURRENT_SCHEMA_VERSION {
+    if let Ok(mut v2) = serde_json::from_slice::<TaskStore>(raw) {
+        if v2.schema_version > CURRENT_SCHEMA_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("schema_version {} no soportada", v2.schema_version),
+            ));
+        }
+        // `schema_version < CURRENT` with real items is a v2-shaped store written
+        // by an older build: upgrade it instead of dropping its items as v1.
+        if v2.schema_version == CURRENT_SCHEMA_VERSION || !v2.items.is_empty() {
+            v2.schema_version = CURRENT_SCHEMA_VERSION;
+            v2.reconcile_next_id();
             return Ok(v2);
         }
     }
@@ -660,7 +804,7 @@ fn parse_any_store_json(raw: &[u8]) -> io::Result<TaskStore> {
         }
     }
 
-    Ok(TaskStore {
+    let mut store = TaskStore {
         schema_version: CURRENT_SCHEMA_VERSION,
         next_id: legacy.next_id.max(1),
         items,
@@ -670,7 +814,98 @@ fn parse_any_store_json(raw: &[u8]) -> io::Result<TaskStore> {
         onboarding_completed: false,
         theme_preset: ThemePreset::Indigo,
         dark_mode: false,
-    })
+        occurrence_done: BTreeMap::new(),
+        occurrence_skipped: BTreeMap::new(),
+    };
+    store.reconcile_next_id();
+    Ok(store)
+}
+
+fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut raw = path.as_os_str().to_os_string();
+    raw.push(suffix);
+    PathBuf::from(raw)
+}
+
+/// Atomic replace: write `*.tmp`, flush it to disk, then rename over the target.
+/// If the platform refuses to replace an existing file, the previous good file
+/// is rotated to `*.bak` and the rename is retried.
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let tmp = sibling_with_suffix(path, ".tmp");
+    fs::write(&tmp, bytes)?;
+    // `File::open` is read-only; on Windows `sync_all` (FlushFileBuffers)
+    // requires a writable handle or it fails with ERROR_ACCESS_DENIED.
+    if let Err(err) = fs::OpenOptions::new()
+        .write(true)
+        .open(&tmp)
+        .and_then(|file| file.sync_all())
+    {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(first_err) => {
+            if !path.exists() {
+                let _ = fs::remove_file(&tmp);
+                return Err(first_err);
+            }
+            let backup = sibling_with_suffix(path, ".bak");
+            match fs::remove_file(&backup) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(first_err);
+                }
+            }
+            if fs::rename(path, &backup).is_err() {
+                let _ = fs::remove_file(&tmp);
+                return Err(first_err);
+            }
+            match fs::rename(&tmp, path) {
+                Ok(()) => Ok(()),
+                Err(second_err) => {
+                    // Restore the previous good file: never leave the slot empty.
+                    let _ = fs::rename(&backup, path);
+                    let _ = fs::remove_file(&tmp);
+                    Err(second_err)
+                }
+            }
+        }
+    }
+}
+
+/// Copies a corrupt payload to `<path>.corrupt.bak` (or a timestamped variant)
+/// without ever overwriting an existing backup.
+fn preserve_corrupt_file(path: &Path) -> io::Result<PathBuf> {
+    let primary = sibling_with_suffix(path, ".corrupt.bak");
+    let mut target = primary.clone();
+    if target.exists() {
+        let stamp = chrono::Local::now().format("%Y%m%dT%H%M%S");
+        let mut attempt = 0_u32;
+        loop {
+            let suffix = if attempt == 0 {
+                format!(".corrupt.{stamp}.bak")
+            } else {
+                format!(".corrupt.{stamp}-{attempt}.bak")
+            };
+            target = sibling_with_suffix(path, &suffix);
+            if !target.exists() {
+                break;
+            }
+            attempt = attempt.wrapping_add(1);
+            if attempt > 10_000 {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "no se pudo reservar un nombre para el backup",
+                ));
+            }
+        }
+    }
+    fs::copy(path, &target)?;
+    Ok(target)
 }
 
 fn parse_schedule(start_raw: &str, end_raw: &str) -> Schedule {
@@ -705,12 +940,14 @@ fn last_day_of_month(year: i32, month: u32) -> u32 {
     } else {
         NaiveDate::from_ymd_opt(year, month + 1, 1)
     };
-    next.and_then(|d| d.pred_opt()).map(|d| d.day()).unwrap_or(28)
+    next.and_then(|d| d.pred_opt())
+        .map(|d| d.day())
+        .unwrap_or(28)
 }
 
 fn encode_store(store: &TaskStore) -> io::Result<Vec<u8>> {
-    let json = serde_json::to_vec(store)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    let json =
+        serde_json::to_vec(store).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
     let mut out = Vec::with_capacity(DATA_MAGIC.len() + json.len());
     out.extend_from_slice(DATA_MAGIC);
     for (idx, byte) in json.iter().enumerate() {
@@ -931,7 +1168,247 @@ mod tests {
 
         let wednesday = NaiveDate::from_ymd_opt(2026, 11, 25).expect("valid date");
         assert!(store.rollover_overdue(wednesday));
-        let rolled = store.items.iter().find(|i| i.id == overdue_id).expect("exists");
+        let rolled = store
+            .items
+            .iter()
+            .find(|i| i.id == overdue_id)
+            .expect("exists");
         assert_eq!(rolled.start_date, wednesday);
+    }
+
+    fn draft(title: &str) -> TaskDraft<'_> {
+        TaskDraft {
+            title,
+            notes: "",
+            time: "",
+            end_time: "",
+            location: "",
+            tag: "",
+            span_days: 1,
+            recurrence: Recurrence::None,
+            color: None,
+            priority: Priority::Normal,
+        }
+    }
+
+    fn unique_temp_dir(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "miagenda_test_{tag}_{}_{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    fn task_item(id: u64, title: &str, recurrence: Recurrence) -> AgendaItem {
+        AgendaItem {
+            id,
+            title: title.to_owned(),
+            notes: String::new(),
+            start_date: NaiveDate::from_ymd_opt(2026, 11, 23).expect("valid date"),
+            span_days: 1,
+            schedule: Schedule::AllDay,
+            recurrence,
+            tag: String::new(),
+            location: String::new(),
+            color: None,
+            kind: ItemKind::Task {
+                completed: false,
+                priority: Priority::Normal,
+                auto_rollover: false,
+            },
+        }
+    }
+
+    #[test]
+    fn save_should_write_atomically_and_leave_no_temp_file() {
+        let dir = unique_temp_dir("atomic");
+        let path = dir.join("tareas.dat");
+        let mut store = TaskStore::default();
+        assert!(store.add_task(Date::new(2026, 11, 20), draft("Primera")));
+        store.save(&path).expect("first save should succeed");
+        assert!(!sibling_with_suffix(&path, ".tmp").exists());
+        assert!(!sibling_with_suffix(&path, ".bak").exists());
+        let loaded = TaskStore::load(&path).expect("load should succeed");
+        assert_eq!(loaded.items.len(), 1);
+
+        // Replacing an existing store must never leave a truncated payload.
+        let mut second = loaded;
+        assert!(second.add_task(Date::new(2026, 11, 21), draft("Segunda")));
+        second.save(&path).expect("second save should succeed");
+        assert!(!sibling_with_suffix(&path, ".tmp").exists());
+        let reloaded = TaskStore::load(&path).expect("reload should succeed");
+        assert_eq!(reloaded.items.len(), 2);
+        assert_eq!(reloaded.tasks_visible_on(Date::new(2026, 11, 21)).len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_should_preserve_corrupt_payload_before_starting_empty() {
+        let dir = unique_temp_dir("corrupt");
+        let path = dir.join("tareas.dat");
+        let garbage = b"OTSK\x00\x01esto-no-es-json-v2";
+        fs::write(&path, garbage).expect("corrupt file should be written");
+
+        let store = TaskStore::load(&path).expect("corrupt load should recover");
+        assert!(store.items.is_empty());
+        let backup = sibling_with_suffix(&path, ".corrupt.bak");
+        assert!(backup.exists(), "corrupt payload must be preserved");
+        assert_eq!(fs::read(&backup).expect("backup readable"), garbage);
+        assert_eq!(fs::read(&path).expect("source readable"), garbage);
+
+        // A second corruption must not overwrite the previous backup.
+        let newer = b"OTSK\x00\x02otra-corrupcion";
+        fs::write(&path, newer).expect("second corrupt file should be written");
+        let _ = TaskStore::load(&path).expect("second corrupt load should recover");
+        assert_eq!(fs::read(&backup).expect("old backup readable"), garbage);
+        let backups = fs::read_dir(&dir)
+            .expect("temp dir readable")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                name.contains(".corrupt.") && name.ends_with(".bak")
+            })
+            .count();
+        assert_eq!(backups, 2, "se esperaba un backup adicional con timestamp");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn next_id_should_be_reconciled_after_migration_and_load() {
+        // Legacy v1 payload: next_id (2) is stale, real ids are 4 and 9.
+        let v1_json = br#"{
+            "next_id": 2,
+            "by_date": {
+                "2026-11-23": [
+                    { "id": 4, "title": "A" },
+                    { "id": 9, "title": "B" }
+                ]
+            }
+        }"#;
+        let migrated = parse_any_store_json(v1_json).expect("v1 migration should succeed");
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(migrated.items.len(), 2);
+        assert_eq!(migrated.next_id, 10);
+
+        // v2 payload with a stale next_id must be fixed on load.
+        let dir = unique_temp_dir("nextid");
+        let path = dir.join("tareas.dat");
+        let mut store = TaskStore::default();
+        store.items.push(task_item(42, "Serie", Recurrence::Daily));
+        store.next_id = 3;
+        store.save(&path).expect("save should succeed");
+        let mut loaded = TaskStore::load(&path).expect("load should succeed");
+        assert_eq!(loaded.next_id, 43);
+        assert!(loaded.add_task(Date::new(2026, 11, 24), draft("Nueva")));
+        assert_eq!(loaded.items.last().map(|item| item.id), Some(43));
+
+        // Future/unknown schema versions must not be silently reinterpreted.
+        assert!(parse_any_store_json(br#"{"schema_version": 99}"#).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn toggling_one_occurrence_should_not_complete_the_whole_series() {
+        let mut store = TaskStore::default();
+        let monday = Date::new(2026, 11, 23);
+        let tuesday = monday.add_days(1);
+        let wednesday = monday.add_days(2);
+        let id = store.add_item(task_item(0, "Diaria", Recurrence::Daily));
+
+        assert!(store.toggle_task(tuesday, id));
+        assert_eq!(store.counts_for(monday), (1, 0));
+        assert_eq!(store.counts_for(tuesday), (0, 1));
+        assert_eq!(store.counts_for(wednesday), (1, 0));
+        assert_eq!(store.items.len(), 1);
+
+        let bytes = encode_store(&store).expect("encode should succeed");
+        let roundtrip = decode_store(&bytes).expect("decode should succeed");
+        assert_eq!(roundtrip.counts_for(tuesday), (0, 1));
+        assert_eq!(roundtrip.counts_for(monday), (1, 0));
+
+        assert!(store.toggle_task(tuesday, id));
+        assert_eq!(store.counts_for(tuesday), (1, 0));
+        assert_eq!(store.items.len(), 1);
+    }
+
+    #[test]
+    fn deleting_one_occurrence_should_skip_only_that_date() {
+        let mut store = TaskStore::default();
+        let monday = Date::new(2026, 11, 23);
+        let tuesday = monday.add_days(1);
+        let wednesday = monday.add_days(2);
+        let id = store.add_item(task_item(0, "Diaria", Recurrence::Daily));
+
+        assert!(store.delete_task(wednesday, id));
+        assert!(store.tasks_visible_on(wednesday).is_empty());
+        assert_eq!(store.tasks_visible_on(monday).len(), 1);
+        assert_eq!(store.tasks_visible_on(tuesday).len(), 1);
+        assert_eq!(store.items.len(), 1);
+        assert!(!store.delete_task(wednesday, id), "skip must be idempotent");
+        assert_eq!(store.tasks_visible_on(monday).len(), 1);
+
+        let bytes = encode_store(&store).expect("encode should succeed");
+        let roundtrip = decode_store(&bytes).expect("decode should succeed");
+        assert!(roundtrip.tasks_visible_on(wednesday).is_empty());
+
+        // Non-recurring items are still removed entirely.
+        let mut other = TaskStore::default();
+        assert!(other.add_task(monday, draft("Única")));
+        let other_id = other.items[0].id;
+        assert!(other.delete_task(monday, other_id));
+        assert!(other.items.is_empty());
+        assert!(other.occurrence_skipped.is_empty());
+    }
+
+    #[test]
+    fn rollover_overdue_should_be_idempotent_and_respect_spans_and_recurrence() {
+        let mut store = TaskStore::default();
+        let monday = NaiveDate::from_ymd_opt(2026, 11, 23).expect("valid date");
+        let wednesday = NaiveDate::from_ymd_opt(2026, 11, 25).expect("valid date");
+
+        let mut overdue = task_item(0, "Vencida", Recurrence::None);
+        overdue.kind = ItemKind::Task {
+            completed: false,
+            priority: Priority::High,
+            auto_rollover: true,
+        };
+        let mut spanning = task_item(0, "Multidía", Recurrence::None);
+        spanning.span_days = 5;
+        spanning.kind = ItemKind::Task {
+            completed: false,
+            priority: Priority::Normal,
+            auto_rollover: true,
+        };
+        let mut recurring = task_item(0, "Serie", Recurrence::Daily);
+        recurring.kind = ItemKind::Task {
+            completed: false,
+            priority: Priority::Normal,
+            auto_rollover: true,
+        };
+
+        let overdue_id = store.add_item(overdue);
+        let spanning_id = store.add_item(spanning);
+        let recurring_id = store.add_item(recurring);
+
+        assert!(store.rollover_overdue(wednesday));
+        assert!(!store.rollover_overdue(wednesday), "must be idempotent");
+        assert_eq!(store.items.len(), 3);
+
+        let start_of = |id: u64| {
+            store
+                .items
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| item.start_date)
+        };
+        assert_eq!(start_of(overdue_id), Some(wednesday));
+        assert_eq!(start_of(spanning_id), Some(monday), "aún cubre hoy");
+        assert_eq!(start_of(recurring_id), Some(monday), "serie intacta");
     }
 }

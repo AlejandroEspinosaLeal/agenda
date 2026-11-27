@@ -1,10 +1,29 @@
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const ENV_TOAST_XML: &str = "MIAGENDA_TOAST_XML";
+
+/// Set by `main` when the app starts with `--autostart`; consumed by `app.rs`
+/// on the first frame to keep the window hidden.
+pub static START_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// Set when the user picks "Salir" in the tray menu so `CloseRequested` may
+/// actually close instead of hiding to the tray.
+pub static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Static toast script: the XML payload travels through `$env:` only.
+const TOAST_SCRIPT: &str = r#"
+$doc = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime]::New();
+$doc.LoadXml($env:MIAGENDA_TOAST_XML);
+$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe';
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]::CreateToastNotifier($appId).Show([Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime]::New($doc))
+"#;
 
 /// Actions triggered by clicking the system tray icon or its context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +47,7 @@ impl TrayController {
     /// Creates the system tray icon next to the Windows clock.
     pub fn new() -> Result<Self, String> {
         let menu = Menu::new();
-        let item_full = MenuItem::new("Abrir Mi Agenda", true, None);
+        let item_full = MenuItem::new("Mostrar", true, None);
         let item_notify = MenuItem::new("Notificación de hoy", true, None);
         let item_quit = MenuItem::new("Salir", true, None);
 
@@ -101,6 +120,7 @@ impl TrayController {
                 return Some(TrayAction::NotifyToday);
             }
             if event.id == self.id_quit {
+                QUIT_REQUESTED.store(true, Ordering::SeqCst);
                 return Some(TrayAction::Quit);
             }
         }
@@ -206,16 +226,36 @@ fn build_tray_rgba(size: u32, badge_count: usize) -> Vec<u8> {
 
 const fn digit_glyph(n: usize) -> [u8; 7] {
     match n {
-        1 => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        2 => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-        3 => [0b01110, 0b10001, 0b00001, 0b00110, 0b00001, 0b10001, 0b01110],
-        4 => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        5 => [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-        6 => [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        7 => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        8 => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        9 => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
-        _ => [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000], // '+'
+        1 => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        2 => [
+            0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111,
+        ],
+        3 => [
+            0b01110, 0b10001, 0b00001, 0b00110, 0b00001, 0b10001, 0b01110,
+        ],
+        4 => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        5 => [
+            0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110,
+        ],
+        6 => [
+            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        7 => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        8 => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        9 => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100,
+        ],
+        _ => [
+            0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
+        ], // '+'
     }
 }
 
@@ -228,7 +268,11 @@ pub fn xml_escape(input: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&apos;"),
-            _ => out.push(ch),
+            // Characters not allowed by XML 1.0 are dropped.
+            '\t' | '\n' | '\r' => out.push(ch),
+            '\u{FFFE}' | '\u{FFFF}' => {}
+            c if (c as u32) < 0x20 => {}
+            c => out.push(c),
         }
     }
     out
@@ -252,21 +296,36 @@ pub fn build_daily_notification_body(pending_titles: &[String]) -> String {
     lines.join("\n")
 }
 
+/// Absolute path to Windows PowerShell to avoid local `powershell.exe` hijacking.
+fn powershell_exe() -> PathBuf {
+    let root = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    root.join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe")
+}
+
 /// Fires a native Windows 10/11 Toast notification asynchronously without blocking the UI.
 pub fn show_windows_toast(title: &str, body: &str) {
-    let title_xml = xml_escape(title).replace('\'', "''");
-    let body_xml = xml_escape(body).replace('\'', "''");
+    let xml = format!(
+        "<toast><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual></toast>",
+        xml_escape(title),
+        xml_escape(body)
+    );
 
     std::thread::spawn(move || {
-        let script = format!(
-            "$xml = '<toast><visual><binding template=\"ToastGeneric\"><text>{title_xml}</text><text>{body_xml}</text></binding></visual></toast>'; \
-             $doc = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime]::New(); \
-             $doc.LoadXml($xml); \
-             $appId = '{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe'; \
-             [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]::CreateToastNotifier($appId).Show([Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType=WindowsRuntime]::New($doc))"
-        );
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+        let _ = Command::new(powershell_exe())
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                TOAST_SCRIPT,
+            ])
+            .env(ENV_TOAST_XML, xml)
             .creation_flags(CREATE_NO_WINDOW)
             .output();
     });

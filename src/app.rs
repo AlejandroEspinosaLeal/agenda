@@ -2,22 +2,16 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
-use eframe::egui::{
-    self, Align, Color32, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2,
-};
+use eframe::egui::{self, Align, Color32, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2};
 
-use crate::calendar::{
-    days_in_month, first_weekday_monday_zero, month_name_es, shift_month, Date,
-};
+use crate::calendar::{days_in_month, first_weekday_monday_zero, month_name_es, shift_month, Date};
 use crate::export;
 use crate::focus::{FocusPreset, FocusTimer};
 use crate::model::{Priority, Recurrence, TaskDraft, TaskStore};
 use crate::nlp;
 use crate::theme::{apply_theme, Palette, Radius, Spacing, ThemePreset};
 use crate::tour::{apply_step_view, render_tour_overlay, TourAnchors, TourOutcome};
-use crate::tray::{
-    build_daily_notification_body, show_windows_toast, TrayAction, TrayController,
-};
+use crate::tray::{build_daily_notification_body, show_windows_toast, TrayAction, TrayController};
 use crate::updater::{self, UpdateStatus, Updater};
 use crate::views::{self, COLOR_PRESETS, TAG_PRESETS};
 
@@ -54,6 +48,7 @@ pub struct AgendaApp {
     pub show_new_task_modal: bool,
     pub show_command_palette: bool,
     pub palette_query: String,
+    pub palette_selection: Option<usize>,
     pub show_tour: bool,
     pub tour_step: usize,
     pub tour_anchors: TourAnchors,
@@ -80,7 +75,10 @@ pub struct AgendaApp {
     pub search_query: String,
     pub category_filter: Option<String>,
     pub dark_mode: bool,
+    /// Cached `(preset, dark, Palette)`; `apply_theme` runs only when this key changes.
+    pub palette_cache: Option<(ThemePreset, bool, Palette)>,
     pub status_error: Option<String>,
+    new_task_modal_was_open: bool,
 }
 
 impl AgendaApp {
@@ -119,6 +117,7 @@ impl AgendaApp {
             show_new_task_modal: false,
             show_command_palette: false,
             palette_query: String::new(),
+            palette_selection: None,
             show_tour,
             tour_step: 0,
             tour_anchors: TourAnchors::default(),
@@ -143,7 +142,9 @@ impl AgendaApp {
             search_query: String::new(),
             category_filter: None,
             dark_mode,
+            palette_cache: None,
             status_error,
+            new_task_modal_was_open: false,
         };
         if let Some(t) = tray.as_mut() {
             let pending = app.pending_titles_today();
@@ -156,7 +157,10 @@ impl AgendaApp {
 
     pub fn send_daily_notification_now(&self) {
         let pending = self.pending_titles_today();
-        let title = format!("Mi Agenda · Hoy ({:02}/{:02})", self.today.day, self.today.month);
+        let title = format!(
+            "Mi Agenda · Hoy ({:02}/{:02})",
+            self.today.day, self.today.month
+        );
         let body = build_daily_notification_body(&pending);
         show_windows_toast(&title, &body);
     }
@@ -258,6 +262,7 @@ impl AgendaApp {
                 self.send_daily_notification_now();
             }
             TrayAction::Quit => {
+                crate::tray::QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -305,20 +310,18 @@ impl AgendaApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(Key::K)) {
-            self.show_command_palette = !self.show_command_palette;
-            if self.show_command_palette {
-                self.palette_query.clear();
-            }
-            return;
-        }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             if self.show_command_palette {
                 self.show_command_palette = false;
+                self.palette_selection = None;
                 return;
             }
             if self.show_new_task_modal {
                 self.show_new_task_modal = false;
+                return;
+            }
+            if self.show_tour {
+                // The tour overlay consumes Escape itself so it never collapses the inspector.
                 return;
             }
             if !self.search_query.is_empty() {
@@ -334,7 +337,19 @@ impl AgendaApp {
                 return;
             }
         }
-        if ctx.wants_keyboard_input() || self.show_command_palette || self.show_tour {
+        // Never stack the palette on top of the modal or the onboarding tour.
+        if self.show_tour || self.show_new_task_modal {
+            return;
+        }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(Key::K)) {
+            self.show_command_palette = !self.show_command_palette;
+            self.palette_selection = None;
+            if self.show_command_palette {
+                self.palette_query.clear();
+            }
+            return;
+        }
+        if ctx.wants_keyboard_input() || self.show_command_palette {
             return;
         }
 
@@ -370,6 +385,7 @@ impl AgendaApp {
 
     fn render_header(&mut self, ui: &mut egui::Ui, p: Palette) {
         let focus_search = ui.input(|i| i.modifiers.ctrl && i.key_pressed(Key::F));
+        let compact = ui.available_width() < 1080.0;
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
@@ -380,7 +396,7 @@ impl AgendaApp {
                 .rounding(Rounding::same(8.0))
                 .inner_margin(egui::Margin::symmetric(8.0, 5.0))
                 .show(ui, |ui| {
-                    ui.label(RichText::new("MA").size(13.0).strong().color(Color32::WHITE));
+                    ui.label(RichText::new("MA").size(13.0).strong().color(p.on_accent));
                 });
             ui.label(
                 RichText::new("Mi Agenda")
@@ -389,10 +405,14 @@ impl AgendaApp {
                     .color(p.ink_primary),
             );
 
-            ui.add_space(16.0);
+            ui.add_space(if compact { 8.0 } else { 16.0 });
 
             // Global Search Bar
-            let search_w = (ui.available_width() - 490.0).clamp(160.0, 380.0);
+            let search_w = if compact {
+                (ui.available_width() - 470.0).clamp(110.0, 240.0)
+            } else {
+                (ui.available_width() - 520.0).clamp(160.0, 380.0)
+            };
             let search_resp = ui.add_sized(
                 Vec2::new(search_w, 34.0),
                 egui::TextEdit::singleline(&mut self.search_query)
@@ -420,6 +440,7 @@ impl AgendaApp {
             if cmd_resp.clicked() {
                 self.show_command_palette = !self.show_command_palette;
                 self.palette_query.clear();
+                self.palette_selection = None;
             }
 
             if !self.search_query.is_empty()
@@ -440,10 +461,7 @@ impl AgendaApp {
                 let help_resp = ui
                     .add(
                         egui::Button::new(
-                            RichText::new("?")
-                                .size(13.0)
-                                .strong()
-                                .color(p.ink_primary),
+                            RichText::new("?").size(13.0).strong().color(p.ink_primary),
                         )
                         .fill(p.bg_elevated)
                         .stroke(Stroke::new(1.0_f32, p.border))
@@ -466,7 +484,7 @@ impl AgendaApp {
                         )
                         .fill(p.bg_elevated)
                         .stroke(Stroke::new(1.0_f32, p.border))
-                        .min_size(Vec2::new(72.0, 34.0)),
+                        .min_size(Vec2::new(if compact { 62.0 } else { 72.0 }, 34.0)),
                     )
                     .on_hover_text("Cambiar tema claro / oscuro");
                 if theme_resp.clicked() {
@@ -475,7 +493,7 @@ impl AgendaApp {
                     self.persist();
                 }
 
-                let palette_label = format!("● {} ▾", self.store.theme_preset.label_es());
+                let palette_label = format!("● {} v", self.store.theme_preset.label_es());
                 let palette_resp = ui.menu_button(
                     RichText::new(palette_label)
                         .size(12.0)
@@ -490,7 +508,7 @@ impl AgendaApp {
                                     ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                                 ui.painter().circle_filled(dot_r.center(), 4.5, dot_col);
                                 let lbl = if selected {
-                                    format!("{} ✓", preset.label_es())
+                                    format!("{}  •", preset.label_es())
                                 } else {
                                     preset.label_es().to_owned()
                                 };
@@ -523,16 +541,13 @@ impl AgendaApp {
                 };
                 let focus_resp = ui
                     .add(
-                        egui::Button::new(
-                            RichText::new(focus_label)
-                                .size(12.5)
-                                .strong()
-                                .color(if self.focus_mode {
-                                    p.accent
-                                } else {
-                                    p.ink_primary
-                                }),
-                        )
+                        egui::Button::new(RichText::new(focus_label).size(12.5).strong().color(
+                            if self.focus_mode {
+                                p.accent
+                            } else {
+                                p.ink_primary
+                            },
+                        ))
                         .fill(if self.focus_mode {
                             p.accent_soft
                         } else {
@@ -542,7 +557,7 @@ impl AgendaApp {
                             1.0_f32,
                             if self.focus_mode { p.accent } else { p.border },
                         ))
-                        .min_size(Vec2::new(86.0, 34.0)),
+                        .min_size(Vec2::new(if compact { 78.0 } else { 86.0 }, 34.0)),
                     )
                     .on_hover_text("Oculta barras laterales para concentrarte");
                 self.tour_anchors.focus_mode = Some(focus_resp.rect);
@@ -553,14 +568,14 @@ impl AgendaApp {
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("+ Nueva Tarea")
+                            RichText::new(if compact { "+ Tarea" } else { "+ Nueva Tarea" })
                                 .size(13.0)
                                 .strong()
-                                .color(Color32::WHITE),
+                                .color(p.on_accent),
                         )
                         .fill(p.accent)
                         .stroke(Stroke::NONE)
-                        .min_size(Vec2::new(124.0, 34.0)),
+                        .min_size(Vec2::new(if compact { 88.0 } else { 124.0 }, 34.0)),
                     )
                     .clicked()
                 {
@@ -596,12 +611,17 @@ impl AgendaApp {
                 for (view, label) in items {
                     let active = self.active_view == view;
                     let btn = egui::Button::new(
-                        RichText::new(label)
-                            .size(13.0)
-                            .strong()
-                            .color(if active { Color32::WHITE } else { p.ink_primary }),
+                        RichText::new(label).size(13.0).strong().color(if active {
+                            p.on_accent
+                        } else {
+                            p.ink_primary
+                        }),
                     )
-                    .fill(if active { p.accent } else { Color32::TRANSPARENT })
+                    .fill(if active {
+                        p.accent
+                    } else {
+                        Color32::TRANSPARENT
+                    })
                     .stroke(Stroke::NONE)
                     .rounding(Rounding::same(Radius::MD))
                     .min_size(Vec2::new(ui.available_width(), 32.0));
@@ -658,11 +678,8 @@ impl AgendaApp {
                         let w = ui.available_width();
                         let (bar_rect, _) =
                             ui.allocate_exact_size(Vec2::new(w, 5.0), Sense::hover());
-                        ui.painter().rect_filled(
-                            bar_rect,
-                            Rounding::same(3.0),
-                            p.bg_elevated,
-                        );
+                        ui.painter()
+                            .rect_filled(bar_rect, Rounding::same(3.0), p.bg_elevated);
                         ui.painter().rect_filled(
                             egui::Rect::from_min_size(bar_rect.min, Vec2::new(w * pct_f, 5.0)),
                             Rounding::same(3.0),
@@ -806,7 +823,6 @@ impl AgendaApp {
                 }
 
                 ui.add_space(6.0);
-
             });
         });
     }
@@ -893,10 +909,8 @@ impl AgendaApp {
                             if !in_month {
                                 continue;
                             }
-                            let cell_date =
-                                first_of_month.add_days(idx as i64 - first_wd as i64);
-                            let min =
-                                origin + Vec2::new(col as f32 * cell_w, row as f32 * cell_h);
+                            let cell_date = first_of_month.add_days(idx as i64 - first_wd as i64);
+                            let min = origin + Vec2::new(col as f32 * cell_w, row as f32 * cell_h);
                             let rect = egui::Rect::from_min_size(min, Vec2::new(cell_w, cell_h));
                             let resp = ui.interact(
                                 rect,
@@ -923,7 +937,7 @@ impl AgendaApp {
                                 cell_date.day.to_string(),
                                 egui::FontId::monospace(10.0),
                                 if is_today {
-                                    Color32::WHITE
+                                    p.on_accent
                                 } else if is_sel {
                                     p.accent
                                 } else {
@@ -936,7 +950,7 @@ impl AgendaApp {
                                 painter.circle_filled(
                                     egui::pos2(rect.center().x, rect.max.y - 2.0),
                                     1.8,
-                                    if is_today { Color32::WHITE } else { p.accent },
+                                    if is_today { p.on_accent } else { p.accent },
                                 );
                             }
                         }
@@ -947,8 +961,11 @@ impl AgendaApp {
 
     fn render_new_task_modal(&mut self, ctx: &egui::Context, p: Palette) {
         if !self.show_new_task_modal {
+            self.new_task_modal_was_open = false;
             return;
         }
+        let just_opened = !self.new_task_modal_was_open;
+        self.new_task_modal_was_open = true;
         let mut open = self.show_new_task_modal;
         let mut close_on_submit = false;
         let date = self.selected_date;
@@ -974,18 +991,28 @@ impl AgendaApp {
             format!("{} de {}", date.day, month_name_es(date.month))
         };
 
-        // Subtle dim backdrop for modern modal depth
+        // Subtle dim backdrop for modern modal depth (blocks click-through to the calendar)
         let screen = ctx.screen_rect();
+        let mut backdrop_clicked = false;
         egui::Area::new(egui::Id::new("new_task_backdrop"))
             .order(egui::Order::Middle)
             .fixed_pos(screen.min)
             .show(ctx, |ui| {
+                let backdrop = ui.allocate_rect(screen, Sense::click_and_drag());
+                if backdrop.clicked() {
+                    backdrop_clicked = true;
+                }
                 ui.painter().rect_filled(
                     screen,
                     0.0,
                     Color32::from_black_alpha(if p.dark { 135 } else { 85 }),
                 );
             });
+        if backdrop_clicked {
+            self.show_new_task_modal = false;
+            self.new_task_modal_was_open = false;
+            return;
+        }
 
         egui::Window::new("new_task_modal_win")
             .id(egui::Id::new("new_task_modal"))
@@ -1021,7 +1048,7 @@ impl AgendaApp {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("✕").size(12.5).color(p.ink_secondary),
+                                    RichText::new("×").size(12.5).color(p.ink_secondary),
                                 )
                                 .fill(p.bg_elevated)
                                 .stroke(Stroke::NONE)
@@ -1060,6 +1087,9 @@ impl AgendaApp {
                         .font(egui::FontId::proportional(15.0))
                         .margin(egui::Margin::symmetric(12.0, 8.0)),
                 );
+                if just_opened {
+                    title_resp.request_focus();
+                }
 
                 ui.add_space(Spacing::MD);
 
@@ -1114,10 +1144,11 @@ impl AgendaApp {
                         let selected = self.new_tag == cat;
                         let tok = p.category_token(cat);
                         let btn = egui::Button::new(
-                            RichText::new(cat)
-                                .size(11.5)
-                                .strong()
-                                .color(if selected { Color32::WHITE } else { tok.text }),
+                            RichText::new(cat).size(11.5).strong().color(if selected {
+                                tok.on_solid
+                            } else {
+                                tok.text
+                            }),
                         )
                         .fill(if selected { tok.solid } else { tok.bg })
                         .stroke(Stroke::new(
@@ -1177,11 +1208,11 @@ impl AgendaApp {
                     let auto = self.new_color.is_none();
                     if ui
                         .add(
-                            egui::Button::new(
-                                RichText::new("Auto")
-                                    .size(11.0)
-                                    .color(if auto { p.accent } else { p.ink_secondary }),
-                            )
+                            egui::Button::new(RichText::new("Auto").size(11.0).color(if auto {
+                                p.accent
+                            } else {
+                                p.ink_secondary
+                            }))
                             .fill(if auto { p.accent_soft } else { p.bg_elevated })
                             .rounding(Rounding::same(Radius::PILL)),
                         )
@@ -1227,7 +1258,7 @@ impl AgendaApp {
                                     RichText::new("+ Guardar en Agenda")
                                         .size(13.0)
                                         .strong()
-                                        .color(Color32::WHITE),
+                                        .color(p.on_accent),
                                 )
                                 .fill(p.accent)
                                 .stroke(Stroke::NONE)
@@ -1239,9 +1270,7 @@ impl AgendaApp {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Cancelar")
-                                        .size(12.5)
-                                        .color(p.ink_secondary),
+                                    RichText::new("Cancelar").size(12.5).color(p.ink_secondary),
                                 )
                                 .fill(p.bg_elevated)
                                 .stroke(Stroke::new(1.0_f32, p.border_subtle))
@@ -1263,6 +1292,7 @@ impl AgendaApp {
         self.show_new_task_modal = open && !close_on_submit;
         if !self.show_new_task_modal {
             self.new_span_days = 1;
+            self.new_task_modal_was_open = false;
         }
     }
 
@@ -1286,7 +1316,13 @@ impl AgendaApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⌘").size(15.0).strong().color(p.accent));
+                    ui.label(
+                        RichText::new("Ctrl+K")
+                            .size(11.0)
+                            .monospace()
+                            .strong()
+                            .color(p.accent),
+                    );
                     let resp = ui.add_sized(
                         Vec2::new(ui.available_width() - 36.0, 34.0),
                         egui::TextEdit::singleline(&mut self.palette_query)
@@ -1296,8 +1332,12 @@ impl AgendaApp {
                             .vertical_align(Align::Center),
                     );
                     resp.request_focus();
+                    if resp.changed() {
+                        self.palette_selection = None;
+                    }
                     if ui.button("×").clicked() {
                         close_palette = true;
+                        self.palette_selection = None;
                     }
                 });
                 ui.add_space(8.0);
@@ -1305,105 +1345,323 @@ impl AgendaApp {
                 ui.add_space(6.0);
 
                 let q = self.palette_query.trim().to_owned();
-                let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+                const COMMANDS: [(&str, &str); 8] = [
+                    ("hoy", "Ir a hoy (T)"),
+                    ("guia", "Ver guía interactiva de bienvenida"),
+                    ("notificacion", "Mostrar notificación de hoy"),
+                    ("tema", "Cambiar tema claro / oscuro"),
+                    ("paleta", "Siguiente paleta de colores"),
+                    ("enfoque", "Iniciar / Salir de Modo Enfoque (F)"),
+                    ("markdown", "Exportar semana a Markdown (.md)"),
+                    ("ics", "Exportar agenda a iCalendar (.ics)"),
+                ];
+                let cmd_filter = q.trim_start_matches('>').trim().to_lowercase();
+                let quick = if !q.is_empty() && !q.starts_with('>') {
+                    nlp::parse_quick_entry(&q)
+                } else {
+                    None
+                };
+                let command_hits: Vec<usize> = COMMANDS
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (key, label))| {
+                        cmd_filter.is_empty()
+                            || label.to_lowercase().contains(&cmd_filter)
+                            || key.contains(&cmd_filter)
+                    })
+                    .map(|(idx, _)| idx)
+                    .collect();
+                let has_query = cmd_filter.chars().count() >= 2;
+                // Borrow by index: the task store is never cloned per keystroke.
+                let task_hits: Vec<usize> = if has_query {
+                    self.store
+                        .items
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| {
+                            item.title.to_lowercase().contains(&cmd_filter)
+                                || item.notes.to_lowercase().contains(&cmd_filter)
+                                || item.tag.to_lowercase().contains(&cmd_filter)
+                        })
+                        .take(6)
+                        .map(|(idx, _)| idx)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let note_hits: Vec<String> = if has_query {
+                    self.store
+                        .daily_notes
+                        .iter()
+                        .filter(|(_, note)| note.to_lowercase().contains(&cmd_filter))
+                        .take(4)
+                        .map(|(key, _)| key.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                let quick_row = quick.as_ref().map(|_| 0usize);
+                let command_start = usize::from(quick_row.is_some());
+                let command_end = command_start + command_hits.len();
+                let task_start = command_end;
+                let task_end = task_start + task_hits.len();
+                let note_start = task_end;
+                let note_end = note_start + note_hits.len();
+                let row_count = note_end;
+
+                if ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+                    self.palette_selection = Some(match self.palette_selection {
+                        Some(i) if row_count > 0 => (i + 1).min(row_count - 1),
+                        _ if row_count > 0 => 0,
+                        _ => 0,
+                    });
+                }
+                if ui.input(|i| i.key_pressed(Key::ArrowUp)) {
+                    self.palette_selection = Some(match self.palette_selection {
+                        Some(i) => i.saturating_sub(1),
+                        None if row_count > 0 => row_count - 1,
+                        None => 0,
+                    });
+                }
+                if self.palette_selection.is_some_and(|i| i >= row_count) {
+                    self.palette_selection = if row_count == 0 {
+                        None
+                    } else {
+                        Some(row_count - 1)
+                    };
+                }
+
+                let mut activated: Option<usize> = None;
+                let mut row_cursor = 0usize;
 
                 egui::ScrollArea::vertical()
                     .max_height(300.0)
                     .show(ui, |ui| {
                         // 1. Entrada rápida en lenguaje natural
-                        if !q.is_empty() && !q.starts_with('>') {
-                            if let Some(parsed) = nlp::parse_quick_entry(&q) {
-                                let target_date = self.today.add_days(parsed.date_offset_days);
-                                let time_str = match (
-                                    parsed.start_time.is_empty(),
-                                    parsed.end_time.is_empty(),
-                                ) {
-                                    (false, false) => {
-                                        format!("{}-{}", parsed.start_time, parsed.end_time)
-                                    }
-                                    (false, true) => parsed.start_time.clone(),
-                                    _ => "Todo el día".to_owned(),
-                                };
-                                let label = format!(
-                                    "+ Crear \"{}\" · {:02}/{} · {} · #{}",
-                                    parsed.title,
-                                    target_date.day,
-                                    target_date.month,
-                                    time_str,
-                                    parsed.tag
-                                );
-                                let btn = ui.add(
-                                    egui::Button::new(
-                                        RichText::new(label).size(12.5).strong().color(p.accent),
-                                    )
-                                    .fill(p.accent_soft)
-                                    .stroke(Stroke::new(1.0_f32, p.accent))
-                                    .min_size(Vec2::new(ui.available_width(), 34.0)),
-                                );
-                                if btn.clicked() || enter_pressed {
-                                    if self.store.add_task(
-                                        target_date,
-                                        TaskDraft {
-                                            title: &parsed.title,
-                                            notes: "",
-                                            time: &parsed.start_time,
-                                            end_time: &parsed.end_time,
-                                            location: "",
-                                            tag: &parsed.tag,
-                                            span_days: 1,
-                                            recurrence: Recurrence::None,
-                                            color: None,
-                                            priority: parsed.priority,
-                                        },
-                                    ) {
-                                        self.select_date(target_date);
-                                        self.persist();
-                                    }
-                                    close_palette = true;
+                        if let Some(parsed) = quick.as_ref() {
+                            let target_date = self.today.add_days(parsed.date_offset_days);
+                            let time_str = match (
+                                parsed.start_time.is_empty(),
+                                parsed.end_time.is_empty(),
+                            ) {
+                                (false, false) => {
+                                    format!("{}-{}", parsed.start_time, parsed.end_time)
                                 }
-                                ui.add_space(6.0);
+                                (false, true) => parsed.start_time.clone(),
+                                _ => "Todo el día".to_owned(),
+                            };
+                            let label = format!(
+                                "+ Crear \"{}\" · {:02}/{} · {} · #{}",
+                                parsed.title,
+                                target_date.day,
+                                target_date.month,
+                                time_str,
+                                parsed.tag
+                            );
+                            let row = row_cursor;
+                            row_cursor += 1;
+                            let is_selected = self.palette_selection == Some(row);
+                            let btn = ui.add(
+                                egui::Button::new(
+                                    RichText::new(label).size(12.5).strong().color(p.accent),
+                                )
+                                .fill(if is_selected {
+                                    p.bg_cell_selected
+                                } else {
+                                    p.accent_soft
+                                })
+                                .stroke(Stroke::new(1.0_f32, p.accent))
+                                .min_size(Vec2::new(ui.available_width(), 34.0)),
+                            );
+                            if btn.clicked() {
+                                activated = Some(row);
                             }
+                            if is_selected {
+                                btn.scroll_to_me(None);
+                            }
+                            ui.add_space(6.0);
                         }
 
                         // 2. Comandos
-                        let cmd_filter = q.trim_start_matches('>').trim().to_lowercase();
-                        let commands = [
-                            ("hoy", "Ir a hoy (T)"),
-                            ("guia", "Ver guía interactiva de bienvenida"),
-                            ("notificacion", "Mostrar notificación de hoy"),
-                            ("tema", "Cambiar tema claro / oscuro"),
-                            ("paleta", "Siguiente paleta de colores"),
-                            ("enfoque", "Iniciar / Salir de Modo Enfoque (F)"),
-                            ("markdown", "Exportar semana a Markdown (.md)"),
-                            ("ics", "Exportar agenda a iCalendar (.ics)"),
-                        ];
-                        let mut any_cmd = false;
-                        for (key, label) in commands {
-                            if !cmd_filter.is_empty()
-                                && !label.to_lowercase().contains(&cmd_filter)
-                                && !key.contains(&cmd_filter)
-                            {
-                                continue;
-                            }
-                            if !any_cmd {
-                                ui.label(
-                                    RichText::new("COMANDOS")
-                                        .size(10.5)
-                                        .strong()
-                                        .color(p.ink_muted),
-                                );
-                                any_cmd = true;
-                            }
-                            if ui
-                                .add(
+                        if !command_hits.is_empty() {
+                            ui.label(
+                                RichText::new("COMANDOS")
+                                    .size(10.5)
+                                    .strong()
+                                    .color(p.ink_muted),
+                            );
+                            for &cmd_idx in &command_hits {
+                                let Some(&(_, label)) = COMMANDS.get(cmd_idx) else {
+                                    continue;
+                                };
+                                let row = row_cursor;
+                                row_cursor += 1;
+                                let is_selected = self.palette_selection == Some(row);
+                                let resp = ui.add(
                                     egui::Button::new(
                                         RichText::new(label).size(12.5).color(p.ink_primary),
                                     )
-                                    .fill(p.bg_elevated)
+                                    .fill(if is_selected {
+                                        p.accent_soft
+                                    } else {
+                                        p.bg_elevated
+                                    })
                                     .min_size(Vec2::new(ui.available_width(), 28.0)),
-                                )
-                                .clicked()
+                                );
+                                if resp.clicked() {
+                                    activated = Some(row);
+                                }
+                                if is_selected {
+                                    resp.scroll_to_me(None);
+                                }
+                            }
+                        }
+
+                        // 3. Búsqueda en tareas y notas (solo índices, sin clonar)
+                        if !task_hits.is_empty() {
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new("TAREAS Y EVENTOS")
+                                    .size(10.5)
+                                    .strong()
+                                    .color(p.ink_muted),
+                            );
+                            for &item_idx in &task_hits {
+                                let Some(item) = self.store.items.get(item_idx) else {
+                                    continue;
+                                };
+                                let d = Date::new(
+                                    item.start_date.year(),
+                                    item.start_date.month() as u8,
+                                    item.start_date.day() as u8,
+                                );
+                                let text = format!(
+                                    "{} · {:02}/{} ({})",
+                                    views::truncate_chars(&item.title, 36),
+                                    d.day,
+                                    d.month,
+                                    item.tag
+                                );
+                                let row = row_cursor;
+                                row_cursor += 1;
+                                let is_selected = self.palette_selection == Some(row);
+                                let resp = ui.add(
+                                    egui::Button::new(
+                                        RichText::new(text).size(12.0).color(p.ink_primary),
+                                    )
+                                    .fill(if is_selected {
+                                        p.accent_soft
+                                    } else {
+                                        p.bg_canvas
+                                    })
+                                    .min_size(Vec2::new(ui.available_width(), 26.0)),
+                                );
+                                if resp.clicked() {
+                                    activated = Some(row);
+                                }
+                                if is_selected {
+                                    resp.scroll_to_me(None);
+                                }
+                            }
+                        }
+                        if !note_hits.is_empty() {
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new("NOTAS")
+                                    .size(10.5)
+                                    .strong()
+                                    .color(p.ink_muted),
+                            );
+                            for date_key in &note_hits {
+                                let Ok(nd) =
+                                    NaiveDate::parse_from_str(date_key, "%Y-%m-%d")
+                                else {
+                                    continue;
+                                };
+                                let d =
+                                    Date::new(nd.year(), nd.month() as u8, nd.day() as u8);
+                                let preview = self
+                                    .store
+                                    .daily_notes
+                                    .get(date_key)
+                                    .map(|note| views::truncate_chars(note.trim(), 42))
+                                    .unwrap_or_default();
+                                let row = row_cursor;
+                                row_cursor += 1;
+                                let is_selected = self.palette_selection == Some(row);
+                                let resp = ui.add(
+                                    egui::Button::new(
+                                        RichText::new(format!(
+                                            "{:02}/{}: {}",
+                                            d.day, d.month, preview
+                                        ))
+                                        .size(12.0)
+                                        .color(p.ink_secondary),
+                                    )
+                                    .fill(if is_selected {
+                                        p.accent_soft
+                                    } else {
+                                        p.bg_canvas
+                                    })
+                                    .min_size(Vec2::new(ui.available_width(), 26.0)),
+                                );
+                                if resp.clicked() {
+                                    activated = Some(row);
+                                }
+                                if is_selected {
+                                    resp.scroll_to_me(None);
+                                }
+                            }
+                        }
+                    });
+
+                let execute_row = activated.or_else(|| {
+                    if ui.input(|i| i.key_pressed(Key::Enter)) {
+                        match self.palette_selection {
+                            Some(row) => Some(row),
+                            // Creating with Enter is only allowed with explicit text and no
+                            // active task/note result; otherwise the user must select a row.
+                            None if quick.is_some()
+                                && task_hits.is_empty()
+                                && note_hits.is_empty() =>
                             {
+                                Some(0)
+                            }
+                            None => None,
+                        }
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(row) = execute_row {
+                    if quick_row == Some(row) {
+                        if let Some(parsed) = quick.as_ref() {
+                            let target_date = self.today.add_days(parsed.date_offset_days);
+                            if self.store.add_task(
+                                target_date,
+                                TaskDraft {
+                                    title: &parsed.title,
+                                    notes: "",
+                                    time: &parsed.start_time,
+                                    end_time: &parsed.end_time,
+                                    location: "",
+                                    tag: &parsed.tag,
+                                    span_days: 1,
+                                    recurrence: Recurrence::None,
+                                    color: None,
+                                    priority: parsed.priority,
+                                },
+                            ) {
+                                self.select_date(target_date);
+                                self.persist();
+                            }
+                            close_palette = true;
+                        }
+                    } else if row >= command_start && row < command_end {
+                        if let Some(&cmd_idx) = command_hits.get(row - command_start) {
+                            if let Some(&(key, _)) = COMMANDS.get(cmd_idx) {
                                 match key {
                                     "hoy" => {
                                         self.today = Date::today();
@@ -1427,15 +1685,18 @@ impl AgendaApp {
                                             .iter()
                                             .position(|p| *p == self.store.theme_preset)
                                             .unwrap_or(0);
-                                        self.store.theme_preset =
-                                            ThemePreset::ALL[(idx + 1) % ThemePreset::ALL.len()];
+                                        self.store.theme_preset = ThemePreset::ALL
+                                            .get((idx + 1) % ThemePreset::ALL.len())
+                                            .copied()
+                                            .unwrap_or(ThemePreset::Indigo);
                                         self.persist();
                                     }
                                     "enfoque" => self.focus_mode = !self.focus_mode,
                                     "markdown" => {
                                         let ws = self.selected_date.week_monday();
                                         let wn = ws.iso_week();
-                                        let md = export::export_week_markdown(&self.store, ws, wn);
+                                        let md =
+                                            export::export_week_markdown(&self.store, ws, wn);
                                         self.export_to_desktop(
                                             &format!("Semana_{wn}_Resumen.md"),
                                             &md,
@@ -1450,115 +1711,39 @@ impl AgendaApp {
                                 close_palette = true;
                             }
                         }
-
-                        // 3. Búsqueda en tareas, eventos y notas
-                        if cmd_filter.chars().count() >= 2 {
-                            let mut shown = 0usize;
-                            for item in self.store.items.clone() {
-                                if shown >= 6 {
-                                    break;
-                                }
-                                let hay = format!("{} {} {}", item.title, item.notes, item.tag)
-                                    .to_lowercase();
-                                if hay.contains(&cmd_filter) {
-                                    if shown == 0 {
-                                        ui.add_space(6.0);
-                                        ui.label(
-                                            RichText::new("TAREAS Y EVENTOS")
-                                                .size(10.5)
-                                                .strong()
-                                                .color(p.ink_muted),
-                                        );
-                                    }
-                                    shown += 1;
-                                    let d = Date::new(
-                                        item.start_date.year(),
-                                        item.start_date.month() as u8,
-                                        item.start_date.day() as u8,
-                                    );
-                                    let text = format!(
-                                        "{} · {:02}/{} ({})",
-                                        views::truncate_chars(&item.title, 36),
-                                        d.day,
-                                        d.month,
-                                        item.tag
-                                    );
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new(text)
-                                                    .size(12.0)
-                                                    .color(p.ink_primary),
-                                            )
-                                            .fill(p.bg_canvas)
-                                            .min_size(Vec2::new(ui.available_width(), 26.0)),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.select_date(d);
-                                        self.active_view = ActiveView::Daily;
-                                        close_palette = true;
-                                    }
-                                }
-                            }
-                            let mut note_hits = 0usize;
-                            let mut jump_note_date: Option<Date> = None;
-                            for (date_key, note) in &self.store.daily_notes {
-                                if note_hits >= 4 {
-                                    break;
-                                }
-                                if note.to_lowercase().contains(&cmd_filter) {
-                                    if let Ok(nd) = NaiveDate::parse_from_str(date_key, "%Y-%m-%d")
-                                    {
-                                        let d = Date::new(
-                                            nd.year(),
-                                            nd.month() as u8,
-                                            nd.day() as u8,
-                                        );
-                                        if note_hits == 0 {
-                                            ui.add_space(6.0);
-                                            ui.label(
-                                                RichText::new("NOTAS")
-                                                    .size(10.5)
-                                                    .strong()
-                                                    .color(p.ink_muted),
-                                            );
-                                        }
-                                        note_hits += 1;
-                                        let preview = views::truncate_chars(note.trim(), 42);
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new(format!(
-                                                        "{:02}/{}: {}",
-                                                        d.day,
-                                                        d.month,
-                                                        preview
-                                                    ))
-                                                    .size(12.0)
-                                                    .color(p.ink_secondary),
-                                                )
-                                                .fill(p.bg_canvas)
-                                                .min_size(Vec2::new(ui.available_width(), 26.0)),
-                                            )
-                                            .clicked()
-                                        {
-                                            jump_note_date = Some(d);
-                                        }
-                                    }
-                                }
-                            }
-                            if let Some(d) = jump_note_date {
+                    } else if row >= task_start && row < task_end {
+                        let target = task_hits.get(row - task_start).and_then(|&item_idx| {
+                            self.store.items.get(item_idx).map(|item| {
+                                Date::new(
+                                    item.start_date.year(),
+                                    item.start_date.month() as u8,
+                                    item.start_date.day() as u8,
+                                )
+                            })
+                        });
+                        if let Some(d) = target {
+                            self.select_date(d);
+                            self.active_view = ActiveView::Daily;
+                            close_palette = true;
+                        }
+                    } else if row >= note_start && row < note_end {
+                        let key = note_hits.get(row - note_start);
+                        if let Some(key) = key {
+                            if let Ok(nd) = NaiveDate::parse_from_str(key, "%Y-%m-%d") {
+                                let d =
+                                    Date::new(nd.year(), nd.month() as u8, nd.day() as u8);
                                 self.select_date(d);
                                 self.active_view = ActiveView::Daily;
                                 close_palette = true;
                             }
                         }
-                    });
+                    }
+                }
             });
 
         if close_palette {
             self.show_command_palette = false;
+            self.palette_selection = None;
         }
     }
 
@@ -1658,7 +1843,8 @@ impl AgendaApp {
                         let block_secs = selected_occ
                             .as_ref()
                             .and_then(|o| {
-                                let end_t = NaiveTime::parse_from_str(&o.task.end_time, "%H:%M").ok()?;
+                                let end_t =
+                                    NaiveTime::parse_from_str(&o.task.end_time, "%H:%M").ok()?;
                                 let end = end_t.hour() * 60 + end_t.minute();
                                 let now = chrono::Local::now().time();
                                 let now_min = now.hour() * 60 + now.minute();
@@ -1689,7 +1875,11 @@ impl AgendaApp {
                                                 if active { p.accent } else { p.ink_secondary },
                                             ),
                                         )
-                                        .fill(if active { p.accent_soft } else { p.bg_elevated }),
+                                        .fill(if active {
+                                            p.accent_soft
+                                        } else {
+                                            p.bg_elevated
+                                        }),
                                     )
                                     .clicked()
                                 {
@@ -1711,7 +1901,7 @@ impl AgendaApp {
                                         RichText::new(primary_label)
                                             .size(13.5)
                                             .strong()
-                                            .color(Color32::WHITE),
+                                            .color(p.on_accent),
                                     )
                                     .fill(p.accent)
                                     .min_size(Vec2::new(110.0, 36.0)),
@@ -1801,9 +1991,13 @@ impl AgendaApp {
                                 };
                                 if ui
                                     .add(
-                                        egui::Button::new(RichText::new(lbl).size(11.5).color(
-                                            if is_sel { p.accent } else { p.ink_primary },
-                                        ))
+                                        egui::Button::new(
+                                            RichText::new(lbl).size(11.5).color(if is_sel {
+                                                p.accent
+                                            } else {
+                                                p.ink_primary
+                                            }),
+                                        )
                                         .fill(if is_sel {
                                             p.accent_soft
                                         } else {
@@ -1828,8 +2022,7 @@ impl AgendaApp {
                     ui.add_space(4.0);
                     let mut changed = false;
                     if let Some(active_id) = self.focus_timer.active_item_id {
-                        if let Some(item) =
-                            self.store.items.iter_mut().find(|i| i.id == active_id)
+                        if let Some(item) = self.store.items.iter_mut().find(|i| i.id == active_id)
                         {
                             changed = ui
                                 .add_sized(
@@ -1860,6 +2053,16 @@ impl AgendaApp {
 
 impl eframe::App for AgendaApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if crate::tray::START_HIDDEN.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+        if ctx.input(|i| i.viewport().close_requested())
+            && !crate::tray::QUIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            // Minimize to the tray instead of exiting unless "Salir" was chosen.
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
         let real_today = Date::today();
         if real_today != self.today {
             self.today = real_today;
@@ -1879,6 +2082,7 @@ impl eframe::App for AgendaApp {
             if let Err(err) = updater::launch_installer(&installer_path) {
                 self.status_error = Some(err);
             } else {
+                crate::tray::QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
             }
@@ -1899,13 +2103,19 @@ impl eframe::App for AgendaApp {
         } else if self.focus_timer.is_running() {
             // 1s tick ONLY while the focus timer is actively running (zero CPU when paused/idle)
             ctx.request_repaint_after(Duration::from_secs(1));
-        } else if self.tray.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(250));
         } else {
-            // Repaint every 20s in idle so the live current-time line stays accurate without burning CPU
-            ctx.request_repaint_after(Duration::from_secs(20));
+            // Tray/menu events wake the UI via callbacks; idle only refreshes the live time line.
+            ctx.request_repaint_after(Duration::from_secs(30));
         }
-        let p = apply_theme(ctx, self.store.theme_preset, self.dark_mode);
+        let theme_key = (self.store.theme_preset, self.dark_mode);
+        let p = match self.palette_cache {
+            Some((preset, dark, cached)) if preset == theme_key.0 && dark == theme_key.1 => cached,
+            _ => {
+                let palette = apply_theme(ctx, theme_key.0, theme_key.1);
+                self.palette_cache = Some((theme_key.0, theme_key.1, palette));
+                palette
+            }
+        };
         self.handle_shortcuts(ctx);
 
         egui::TopBottomPanel::top("clarity_header")
@@ -1996,7 +2206,7 @@ impl eframe::App for AgendaApp {
                                     RichText::new(views::truncate_chars(title, 24))
                                         .size(11.5)
                                         .strong()
-                                        .color(Color32::WHITE),
+                                        .color(p.on_accent),
                                 );
                             });
                     });

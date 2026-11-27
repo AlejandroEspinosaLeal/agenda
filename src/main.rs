@@ -13,11 +13,16 @@ mod tray;
 mod updater;
 mod views;
 
+use std::sync::atomic::Ordering;
+
 use app::AgendaApp;
 use eframe::egui;
 
 fn main() -> eframe::Result<()> {
     let autostart = std::env::args().any(|a| a == "--autostart");
+    if autostart {
+        tray::START_HIDDEN.store(true, Ordering::SeqCst);
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 840.0])

@@ -28,7 +28,11 @@ pub fn current_local_minutes() -> u32 {
 pub const fn snap_to_15(minutes: u32) -> u32 {
     let clamped = if minutes > 1440 { 1440 } else { minutes };
     let snapped = ((clamped + 7) / 15) * 15;
-    if snapped > 1440 { 1440 } else { snapped }
+    if snapped > 1440 {
+        1440
+    } else {
+        snapped
+    }
 }
 
 /// Partitions overlapping time intervals into connected clusters and assigns parallel columns
@@ -102,8 +106,16 @@ mod tests {
     #[test]
     fn non_overlapping_blocks_should_use_single_column() {
         let out = layout_day_blocks(vec![
-            TimeInterval { id: 1, start_min: 540, end_min: 600 },
-            TimeInterval { id: 2, start_min: 600, end_min: 660 },
+            TimeInterval {
+                id: 1,
+                start_min: 540,
+                end_min: 600,
+            },
+            TimeInterval {
+                id: 2,
+                start_min: 600,
+                end_min: 660,
+            },
         ]);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].total_cols, 1);
@@ -113,8 +125,16 @@ mod tests {
     #[test]
     fn simultaneous_blocks_should_split_into_parallel_columns() {
         let out = layout_day_blocks(vec![
-            TimeInterval { id: 1, start_min: 540, end_min: 630 },
-            TimeInterval { id: 2, start_min: 570, end_min: 660 },
+            TimeInterval {
+                id: 1,
+                start_min: 540,
+                end_min: 630,
+            },
+            TimeInterval {
+                id: 2,
+                start_min: 570,
+                end_min: 660,
+            },
         ]);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].col, 0);
@@ -127,9 +147,21 @@ mod tests {
     fn chained_overlap_should_reuse_freed_column() {
         // A: 9-11, B: 10-12, C: 11-13 -> A and C share col 0, B gets col 1
         let out = layout_day_blocks(vec![
-            TimeInterval { id: 1, start_min: 540, end_min: 660 },
-            TimeInterval { id: 2, start_min: 600, end_min: 720 },
-            TimeInterval { id: 3, start_min: 660, end_min: 780 },
+            TimeInterval {
+                id: 1,
+                start_min: 540,
+                end_min: 660,
+            },
+            TimeInterval {
+                id: 2,
+                start_min: 600,
+                end_min: 720,
+            },
+            TimeInterval {
+                id: 3,
+                start_min: 660,
+                end_min: 780,
+            },
         ]);
         assert_eq!(out[0].col, 0);
         assert_eq!(out[1].col, 1);

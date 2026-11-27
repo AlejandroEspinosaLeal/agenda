@@ -1,6 +1,4 @@
-use eframe::egui::{
-    self, Align, Color32, FontId, Layout, RichText, Rounding, Sense, Stroke, Vec2,
-};
+use eframe::egui::{self, Align, FontId, Layout, RichText, Rounding, Sense, Stroke, Vec2};
 
 use crate::app::{AgendaApp, GridCreateDrag};
 use crate::calendar::{month_name_es, month_short_es, weekday_name_es, Date};
@@ -111,8 +109,18 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
     ui.add_space(Spacing::MD);
 
     let avail = ui.available_size();
-    let right_w = if app.focus_mode { 0.0 } else { (avail.x * 0.25).clamp(250.0, 300.0) };
-    let left_w = (avail.x - if app.focus_mode { 0.0 } else { right_w + Spacing::LG }).max(420.0);
+    let right_w = if app.focus_mode {
+        0.0
+    } else {
+        (avail.x * 0.25).clamp(250.0, 300.0)
+    };
+    let left_w = (avail.x
+        - if app.focus_mode {
+            0.0
+        } else {
+            right_w + Spacing::LG
+        })
+    .max(420.0);
 
     ui.horizontal_top(|ui| {
         // Columna izquierda / central: Grid Horario Real + Ritmo del día
@@ -158,21 +166,10 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                 {
                                     app.daily_24h = !app.daily_24h;
                                 }
-
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.allocate_ui_with_layout(
-                                        Vec2::new(ui.available_width(), 28.0),
-                                        Layout::left_to_right(Align::Center),
-                                        |ui| {
-                                            ui.add_space((ui.available_width() - 340.0).max(0.0));
-                                            views::category_filter_pills(
-                                                ui,
-                                                &mut app.category_filter,
-                                                p,
-                                            );
-                                        },
-                                    );
-                                });
+                            });
+                            ui.add_space(Spacing::XS);
+                            ui.horizontal_wrapped(|ui| {
+                                views::category_filter_pills(ui, &mut app.category_filter, p);
                             });
 
                             ui.add_space(Spacing::SM);
@@ -231,7 +228,8 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                                                 .size(11.5)
                                                                 .strong();
                                                             rt = if task.done {
-                                                                rt.strikethrough().color(p.ink_muted)
+                                                                rt.strikethrough()
+                                                                    .color(p.ink_muted)
                                                             } else {
                                                                 rt.color(fg)
                                                             };
@@ -357,18 +355,25 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                         }
                                     }
                                     if bg_resp.dragged() {
-                                        if let (Some(drag), Some(ptr)) =
-                                            (&mut app.grid_create_drag, ui.ctx().pointer_interact_pos())
-                                        {
+                                        if let (Some(drag), Some(ptr)) = (
+                                            &mut app.grid_create_drag,
+                                            ui.ctx().pointer_interact_pos(),
+                                        ) {
                                             drag.current_min = y_to_snap_min(ptr.y);
                                         }
                                     }
                                     if bg_resp.drag_stopped() {
                                         if let Some(drag) = app.grid_create_drag.take() {
                                             let (s, e) = if drag.current_min >= drag.anchor_min {
-                                                (drag.anchor_min, drag.current_min.max(drag.anchor_min + 30))
+                                                (
+                                                    drag.anchor_min,
+                                                    drag.current_min.max(drag.anchor_min + 30),
+                                                )
                                             } else {
-                                                (drag.current_min, drag.anchor_min.max(drag.current_min + 30))
+                                                (
+                                                    drag.current_min,
+                                                    drag.anchor_min.max(drag.current_min + 30),
+                                                )
                                             };
                                             open_draft = Some((drag.day, s, e));
                                         }
@@ -403,7 +408,8 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                     if let Some(drag) = app.grid_create_drag {
                                         if drag.day == date {
                                             let s = drag.anchor_min.min(drag.current_min);
-                                            let e = drag.anchor_min.max(drag.current_min).max(s + 15);
+                                            let e =
+                                                drag.anchor_min.max(drag.current_min).max(s + 15);
                                             let top = canvas_rect.min.y
                                                 + (s - min_visible) as f32 * px_per_min;
                                             let h = ((e - s) as f32 * px_per_min).max(16.0);
@@ -454,8 +460,7 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                         let e = blk.end_min.min(max_visible);
                                         let top_y = canvas_rect.min.y
                                             + (s - min_visible) as f32 * px_per_min;
-                                        let height =
-                                            ((e - s) as f32 * px_per_min).max(26.0);
+                                        let height = ((e - s) as f32 * px_per_min).max(26.0);
 
                                         let col_w = track_w / blk.total_cols as f32;
                                         let x = track_x + blk.col as f32 * col_w + 2.0;
@@ -495,7 +500,11 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                         // Cuerpo arrastrable y clicable
                                         let body_rect = egui::Rect::from_min_max(
                                             block_rect.min,
-                                            egui::pos2(block_rect.max.x, (block_rect.max.y - 6.0).max(block_rect.min.y + 14.0)),
+                                            egui::pos2(
+                                                block_rect.max.x,
+                                                (block_rect.max.y - 6.0)
+                                                    .max(block_rect.min.y + 14.0),
+                                            ),
                                         );
                                         let resp = ui.interact(
                                             body_rect,
@@ -530,11 +539,13 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                             Sense::drag(),
                                         );
                                         if res_resp.hovered() || res_resp.dragged() {
-                                            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                                            ui.ctx()
+                                                .set_cursor_icon(egui::CursorIcon::ResizeVertical);
                                         }
                                         if res_resp.dragged() {
                                             if let Some(ptr) = ui.ctx().pointer_interact_pos() {
-                                                let new_e = y_to_snap_min(ptr.y).max(blk.start_min + 15);
+                                                let new_e =
+                                                    y_to_snap_min(ptr.y).max(blk.start_min + 15);
                                                 move_update = Some((task.id, blk.start_min, new_e));
                                             }
                                         }
@@ -552,8 +563,11 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                             task.title, range_txt
                                         ));
 
-                                        let title_color =
-                                            if task.done { p.ink_muted } else { p.ink_primary };
+                                        let title_color = if task.done {
+                                            p.ink_muted
+                                        } else {
+                                            p.ink_primary
+                                        };
                                         let max_chars =
                                             ((w - 18.0) / 6.5).floor().max(5.0) as usize;
                                         painter.text(
@@ -599,7 +613,7 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                             egui::Align2::CENTER_CENTER,
                                             format!("{now_h:02}:{now_m:02}"),
                                             FontId::monospace(10.0),
-                                            Color32::WHITE,
+                                            p.on_priority_high,
                                         );
                                         painter.line_segment(
                                             [
@@ -670,9 +684,7 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                         .color(p.ink_primary),
                                 );
                                 ui.label(
-                                    RichText::new(rhythm_desc)
-                                        .size(11.5)
-                                        .color(p.ink_secondary),
+                                    RichText::new(rhythm_desc).size(11.5).color(p.ink_secondary),
                                 );
                             });
                         });

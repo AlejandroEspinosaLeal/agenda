@@ -1,4 +1,6 @@
-use eframe::egui::{self, Color32, Key, Order, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
+use eframe::egui::{
+    self, Color32, Key, Order, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2,
+};
 
 use crate::app::ActiveView;
 use crate::theme::{Palette, Radius};
@@ -125,8 +127,14 @@ pub fn callout_pos_for_target(spotlight: Rect, screen: Rect, card_size: Vec2) ->
         spotlight.top() - margin - card_size.y
     };
 
-    x = x.clamp(screen.left() + margin, (screen.right() - card_size.x - margin).max(margin));
-    y = y.clamp(screen.top() + margin, (screen.bottom() - card_size.y - margin).max(margin));
+    x = x.clamp(
+        screen.left() + margin,
+        (screen.right() - card_size.x - margin).max(margin),
+    );
+    y = y.clamp(
+        screen.top() + margin,
+        (screen.bottom() - card_size.y - margin).max(margin),
+    );
     Pos2::new(x, y)
 }
 
@@ -168,50 +176,49 @@ pub fn render_tour_overlay(
     });
 
     // 4-rect spotlight cutout so the highlighted UI stays crisp and unobscured
+    let dim = Color32::from_black_alpha(150);
+    let mut bands: [Option<Rect>; 4] = [None; 4];
+    if spotlight.top() > screen.top() {
+        bands[0] = Some(Rect::from_min_max(
+            screen.min,
+            Pos2::new(screen.max.x, spotlight.top()),
+        ));
+    }
+    if spotlight.bottom() < screen.max.y {
+        bands[1] = Some(Rect::from_min_max(
+            Pos2::new(screen.min.x, spotlight.bottom()),
+            screen.max,
+        ));
+    }
+    if spotlight.left() > screen.left() {
+        bands[2] = Some(Rect::from_min_max(
+            Pos2::new(screen.min.x, spotlight.top()),
+            Pos2::new(spotlight.left(), spotlight.bottom()),
+        ));
+    }
+    if spotlight.right() < screen.max.x {
+        bands[3] = Some(Rect::from_min_max(
+            Pos2::new(spotlight.right(), spotlight.top()),
+            Pos2::new(screen.max.x, spotlight.bottom()),
+        ));
+    }
+
+    let mut backdrop_clicked = false;
     egui::Area::new(egui::Id::new("onboarding_tour_backdrop"))
         .order(Order::Foreground)
         .fixed_pos(screen.min)
         .show(ctx, |ui| {
-            let painter = ui.painter();
-            let dim = Color32::from_black_alpha(150);
-
-            // Top band
-            if spotlight.top() > screen.top() {
-                painter.rect_filled(
-                    Rect::from_min_max(screen.min, Pos2::new(screen.max.x, spotlight.top())),
-                    0.0,
-                    dim,
-                );
-            }
-            // Bottom band
-            if spotlight.bottom() < screen.max.y {
-                painter.rect_filled(
-                    Rect::from_min_max(Pos2::new(screen.min.x, spotlight.bottom()), screen.max),
-                    0.0,
-                    dim,
-                );
-            }
-            // Left band
-            if spotlight.left() > screen.left() {
-                painter.rect_filled(
-                    Rect::from_min_max(
-                        Pos2::new(screen.min.x, spotlight.top()),
-                        Pos2::new(spotlight.left(), spotlight.bottom()),
-                    ),
-                    0.0,
-                    dim,
-                );
-            }
-            // Right band
-            if spotlight.right() < screen.max.x {
-                painter.rect_filled(
-                    Rect::from_min_max(
-                        Pos2::new(spotlight.right(), spotlight.top()),
-                        Pos2::new(screen.max.x, spotlight.bottom()),
-                    ),
-                    0.0,
-                    dim,
-                );
+            let painter = ui.painter().clone();
+            for band in bands.iter() {
+                let Some(rect) = band else {
+                    continue;
+                };
+                painter.rect_filled(*rect, 0.0, dim);
+                // The dim bands swallow clicks/drags so the underlying calendar never changes.
+                let band_resp = ui.allocate_rect(*rect, Sense::click_and_drag());
+                if band_resp.clicked() {
+                    backdrop_clicked = true;
+                }
             }
 
             // Highlight ring around target
@@ -221,6 +228,9 @@ pub fn render_tour_overlay(
                 Stroke::new(2.5_f32, p.accent),
             );
         });
+    if backdrop_clicked {
+        outcome = TourOutcome::CompletedOrSkipped;
+    }
 
     let card_size = Vec2::new(330.0, 178.0);
     let card_pos = callout_pos_for_target(spotlight, screen, card_size);
@@ -272,11 +282,7 @@ pub fn render_tour_overlay(
                             .color(p.ink_primary),
                     );
                     ui.add_space(6.0);
-                    ui.label(
-                        RichText::new(step.body)
-                            .size(12.5)
-                            .color(p.ink_secondary),
-                    );
+                    ui.label(RichText::new(step.body).size(12.5).color(p.ink_secondary));
                     ui.add_space(12.0);
 
                     ui.horizontal(|ui| {
@@ -296,14 +302,18 @@ pub fn render_tour_overlay(
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let is_last = *step_idx + 1 == total;
-                            let next_label = if is_last { "¡Empezar!" } else { "Siguiente →" };
+                            let next_label = if is_last {
+                                "¡Empezar!"
+                            } else {
+                                "Siguiente →"
+                            };
                             if ui
                                 .add(
                                     egui::Button::new(
                                         RichText::new(next_label)
                                             .size(12.0)
                                             .strong()
-                                            .color(Color32::WHITE),
+                                            .color(p.on_accent),
                                     )
                                     .fill(p.accent)
                                     .min_size(Vec2::new(96.0, 28.0)),

@@ -1,6 +1,4 @@
-use eframe::egui::{
-    self, Align, Color32, FontId, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2,
-};
+use eframe::egui::{self, Align, FontId, Key, Layout, RichText, Rounding, Sense, Stroke, Vec2};
 
 use crate::app::{ActiveView, AgendaApp};
 use crate::calendar::{
@@ -15,7 +13,11 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
     let (pending_m, done_m) = app.store.month_counts(app.view_year, app.view_month);
     let total_days_m = usize::from(days_in_month(app.view_year, app.view_month));
     let days_with_tasks = (1..=total_days_m as u8)
-        .filter(|&d| !app.store.tasks_visible_on(Date::new(app.view_year, app.view_month, d)).is_empty())
+        .filter(|&d| {
+            !app.store
+                .tasks_visible_on(Date::new(app.view_year, app.view_month, d))
+                .is_empty()
+        })
         .count();
     let free_pct = ((total_days_m - days_with_tasks) * 100) / total_days_m.max(1);
 
@@ -37,23 +39,36 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                         .min_size(Vec2::new(30.0, 30.0))
                 };
 
-                if ui.add(nav_btn("‹")).on_hover_text("Mes anterior (←)").clicked() {
+                if ui
+                    .add(nav_btn("‹"))
+                    .on_hover_text("Mes anterior (←)")
+                    .clicked()
+                {
                     app.change_month(-1);
                 }
                 if ui
                     .add(
-                        egui::Button::new(RichText::new("Hoy").size(12.5).strong().color(p.ink_primary))
-                            .fill(p.bg_elevated)
-                            .stroke(Stroke::new(1.0_f32, p.border_subtle))
-                            .rounding(Rounding::same(Radius::SM))
-                            .min_size(Vec2::new(48.0, 30.0)),
+                        egui::Button::new(
+                            RichText::new("Hoy")
+                                .size(12.5)
+                                .strong()
+                                .color(p.ink_primary),
+                        )
+                        .fill(p.bg_elevated)
+                        .stroke(Stroke::new(1.0_f32, p.border_subtle))
+                        .rounding(Rounding::same(Radius::SM))
+                        .min_size(Vec2::new(48.0, 30.0)),
                     )
                     .clicked()
                 {
                     app.today = Date::today();
                     app.select_date(app.today);
                 }
-                if ui.add(nav_btn("›")).on_hover_text("Mes siguiente (→)").clicked() {
+                if ui
+                    .add(nav_btn("›"))
+                    .on_hover_text("Mes siguiente (→)")
+                    .clicked()
+                {
                     app.change_month(1);
                 }
 
@@ -110,12 +125,7 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                     p.ink_secondary,
                     p.bg_elevated,
                 );
-                views::badge(
-                    ui,
-                    &format!("{free_pct}% Libre"),
-                    p.accent,
-                    p.accent_soft,
-                );
+                views::badge(ui, &format!("{free_pct}% Libre"), p.accent, p.accent_soft);
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     // Inner left-to-right keeps pills in exact order: Todas, Trabajo, Personal, Estudio, Salud
@@ -141,7 +151,13 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
     } else {
         0.0
     };
-    let grid_w = (avail.x - if show_inspector { inspector_w + Spacing::MD } else { 0.0 }).max(420.0);
+    let grid_w = (avail.x
+        - if show_inspector {
+            inspector_w + Spacing::MD
+        } else {
+            0.0
+        })
+    .max(420.0);
 
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(
@@ -173,7 +189,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
 
     let gap = 8.0_f32;
     let header_h = 26.0_f32;
-    let col_w = ((grid_w - gap * 6.0) / 7.0).floor().max(64.0);
+    let col_w = ((grid_w - gap * 6.0) / 7.0).floor().max(48.0);
     let row_h = ((avail_h - header_h - gap * rows as f32) / rows as f32)
         .floor()
         .max(76.0);
@@ -209,8 +225,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     let modal_range = (app.show_new_task_modal && app.new_span_days > 1).then(|| {
         (
             app.selected_date,
-            app.selected_date
-                .add_days(i64::from(app.new_span_days - 1)),
+            app.selected_date.add_days(i64::from(app.new_span_days - 1)),
         )
     });
     let active_range = drag_range.or(modal_range);
@@ -218,8 +233,8 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
     for row in 0..rows {
         for col in 0..7 {
             let idx = row * 7 + col;
-            let cell_min = grid_origin
-                + Vec2::new(col as f32 * (col_w + gap), row as f32 * (row_h + gap));
+            let cell_min =
+                grid_origin + Vec2::new(col as f32 * (col_w + gap), row as f32 * (row_h + gap));
             let cell_rect = egui::Rect::from_min_size(cell_min, Vec2::new(col_w, row_h));
             let day_offset = idx as i64 - first_wd as i64;
             let cell_date = first_of_month.add_days(day_offset);
@@ -263,8 +278,11 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 egui::pos2(cell_rect.max.x - 24.0, cell_rect.min.y + 6.0),
                 Vec2::splat(18.0),
             );
-            let plus_resp =
-                ui.interact(plus_rect, ui.id().with(("m_add", cell_date)), Sense::click());
+            let plus_resp = ui.interact(
+                plus_rect,
+                ui.id().with(("m_add", cell_date)),
+                Sense::click(),
+            );
             if plus_resp.clicked() {
                 app.selected_date = cell_date;
                 app.show_new_task_modal = true;
@@ -315,17 +333,15 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
             // Day number + HOY pill (tabular monospace)
             let num_pos = cell_rect.min + Vec2::new(10.0, 8.0);
             if is_today {
-                let badge_rect = egui::Rect::from_min_size(
-                    num_pos - Vec2::new(3.0, 2.0),
-                    Vec2::new(22.0, 20.0),
-                );
+                let badge_rect =
+                    egui::Rect::from_min_size(num_pos - Vec2::new(3.0, 2.0), Vec2::new(22.0, 20.0));
                 painter.rect_filled(badge_rect, Rounding::same(10.0), p.accent);
                 painter.text(
                     badge_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     cell_date.day.to_string(),
                     FontId::monospace(12.0),
-                    Color32::WHITE,
+                    p.on_accent,
                 );
                 painter.text(
                     egui::pos2(badge_rect.max.x + 6.0, badge_rect.center().y),
@@ -347,7 +363,7 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
             // Up to 3 compact blocks per cell (color dot + time + truncated title) + clickable "+N más"
             let chip_h = 20.0_f32;
             let chip_gap = 4.0_f32;
-            let max_preview = ((row_h - 38.0) / (chip_h + chip_gap))
+            let max_preview = ((row_h - 56.0) / (chip_h + chip_gap))
                 .floor()
                 .clamp(1.0, 3.0) as usize;
 
@@ -393,7 +409,11 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     egui::Align2::LEFT_CENTER,
                     views::truncate_chars(&display, max_chars),
                     FontId::proportional(10.5),
-                    if task.done { p.ink_muted } else { p.ink_primary },
+                    if task.done {
+                        p.ink_muted
+                    } else {
+                        p.ink_primary
+                    },
                 );
             }
 
@@ -402,8 +422,11 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     egui::pos2(cell_rect.max.x - 54.0, cell_rect.max.y - 18.0),
                     Vec2::new(48.0, 15.0),
                 );
-                let more_resp =
-                    ui.interact(more_rect, ui.id().with(("m_more", cell_date)), Sense::click());
+                let more_resp = ui.interact(
+                    more_rect,
+                    ui.id().with(("m_more", cell_date)),
+                    Sense::click(),
+                );
                 if more_resp.clicked() {
                     app.selected_date = cell_date;
                     app.monthly_inspector_open = true;
@@ -413,7 +436,11 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                     egui::Align2::RIGHT_CENTER,
                     format!("+{} más", tasks.len() - max_preview),
                     FontId::proportional(10.0),
-                    if more_resp.hovered() { p.accent } else { p.ink_muted },
+                    if more_resp.hovered() {
+                        p.accent
+                    } else {
+                        p.ink_muted
+                    },
                 );
             }
 
@@ -430,14 +457,22 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
                 painter.circle_filled(
                     plus_rect.center(),
                     8.5,
-                    if plus_resp.hovered() { p.accent } else { p.accent_soft },
+                    if plus_resp.hovered() {
+                        p.accent
+                    } else {
+                        p.accent_soft
+                    },
                 );
                 painter.text(
                     plus_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "+",
                     FontId::proportional(12.0),
-                    if plus_resp.hovered() { Color32::WHITE } else { p.accent },
+                    if plus_resp.hovered() {
+                        p.on_accent
+                    } else {
+                        p.accent
+                    },
                 );
             }
         }
@@ -449,15 +484,17 @@ fn render_grid(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette, grid_w: f32, 
         if ui.input(|i| i.pointer.primary_down()) {
             if span > 1 {
                 if let Some(pos) = pointer_pos {
-                    let pill_rect =
-                        egui::Rect::from_min_size(pos + Vec2::new(12.0, 12.0), Vec2::new(66.0, 22.0));
+                    let pill_rect = egui::Rect::from_min_size(
+                        pos + Vec2::new(12.0, 12.0),
+                        Vec2::new(66.0, 22.0),
+                    );
                     painter.rect_filled(pill_rect, Rounding::same(6.0), p.accent);
                     painter.text(
                         pill_rect.center(),
                         egui::Align2::CENTER_CENTER,
                         format!("{span} días"),
                         FontId::proportional(11.0),
-                        Color32::WHITE,
+                        p.on_accent,
                     );
                 }
             }
@@ -534,12 +571,7 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                 } else {
                     for occ in &occurrences {
                         let task = &occ.task;
-                        let (fg, _) = views::task_colors(
-                            task.color,
-                            &task.tag,
-                            task.priority,
-                            p,
-                        );
+                        let (fg, _) = views::task_colors(task.color, &task.tag, task.priority, p);
                         let card_resp = egui::Frame::none()
                             .fill(p.bg_canvas)
                             .stroke(Stroke::new(1.0_f32, p.border_subtle))
@@ -558,25 +590,31 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                         } else {
                                             task.tag.to_uppercase()
                                         };
-                                        ui.label(RichText::new(cat_label).size(10.5).strong().color(fg));
-                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                            if !task.time.is_empty() {
-                                                let time_str = if task.end_time.is_empty() {
-                                                    task.time.clone()
-                                                } else {
-                                                    format!("{} - {}", task.time, task.end_time)
-                                                };
-                                                ui.label(
-                                                    RichText::new(time_str)
-                                                        .size(11.0)
-                                                        .color(p.ink_muted),
-                                                );
-                                            }
-                                        });
+                                        ui.label(
+                                            RichText::new(cat_label).size(10.5).strong().color(fg),
+                                        );
+                                        ui.with_layout(
+                                            Layout::right_to_left(Align::Center),
+                                            |ui| {
+                                                if !task.time.is_empty() {
+                                                    let time_str = if task.end_time.is_empty() {
+                                                        task.time.clone()
+                                                    } else {
+                                                        format!("{} - {}", task.time, task.end_time)
+                                                    };
+                                                    ui.label(
+                                                        RichText::new(time_str)
+                                                            .size(11.0)
+                                                            .color(p.ink_muted),
+                                                    );
+                                                }
+                                            },
+                                        );
                                     });
 
                                     ui.add_space(3.0);
-                                    let mut title_rt = RichText::new(&task.title).size(13.5).strong();
+                                    let mut title_rt =
+                                        RichText::new(&task.title).size(13.5).strong();
                                     if task.done {
                                         title_rt = title_rt.strikethrough().color(p.ink_muted);
                                     } else {
@@ -594,30 +632,36 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                                             .size(11.0)
                                             .color(p.ink_muted),
                                         );
-                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                            if ui
-                                                .add(
-                                                    egui::Button::new(
-                                                        RichText::new("✕")
-                                                            .size(12.5)
-                                                            .strong()
-                                                            .color(p.priority_high),
+                                        ui.with_layout(
+                                            Layout::right_to_left(Align::Center),
+                                            |ui| {
+                                                if ui
+                                                    .add(
+                                                        egui::Button::new(
+                                                            RichText::new("×")
+                                                                .size(12.5)
+                                                                .strong()
+                                                                .color(p.priority_high),
+                                                        )
+                                                        .fill(p.priority_high_bg)
+                                                        .stroke(Stroke::new(
+                                                            1.0_f32,
+                                                            p.priority_high,
+                                                        ))
+                                                        .rounding(Rounding::same(6.0))
+                                                        .min_size(Vec2::new(26.0, 24.0)),
                                                     )
-                                                    .fill(p.priority_high_bg)
-                                                    .stroke(Stroke::new(1.0_f32, p.priority_high))
-                                                    .rounding(Rounding::same(6.0))
-                                                    .min_size(Vec2::new(26.0, 24.0)),
-                                                )
-                                                .on_hover_text("Eliminar tarea")
-                                                .clicked()
-                                            {
-                                                delete_target = Some((occ.start_date, task.id));
-                                            }
-                                            let mut checked = task.done;
-                                            if ui.checkbox(&mut checked, "").changed() {
-                                                toggle_target = Some((occ.start_date, task.id));
-                                            }
-                                        });
+                                                    .on_hover_text("Eliminar tarea")
+                                                    .clicked()
+                                                {
+                                                    delete_target = Some((occ.start_date, task.id));
+                                                }
+                                                let mut checked = task.done;
+                                                if ui.checkbox(&mut checked, "").changed() {
+                                                    toggle_target = Some((occ.start_date, task.id));
+                                                }
+                                            },
+                                        );
                                     });
                                 });
                             });
@@ -660,10 +704,12 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                     let enter = title_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                     let add_clicked = ui
                         .add(
-                            egui::Button::new(RichText::new("+").size(14.0).strong().color(Color32::WHITE))
-                                .fill(p.accent)
-                                .rounding(Rounding::same(Radius::SM))
-                                .min_size(Vec2::new(30.0, 30.0)),
+                            egui::Button::new(
+                                RichText::new("+").size(14.0).strong().color(p.on_accent),
+                            )
+                            .fill(p.accent)
+                            .rounding(Rounding::same(Radius::SM))
+                            .min_size(Vec2::new(30.0, 30.0)),
                         )
                         .on_hover_text("Guardar tarea rápida")
                         .clicked();
@@ -672,10 +718,12 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                     }
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("•••").size(12.0).color(p.ink_secondary))
-                                .fill(p.bg_elevated)
-                                .rounding(Rounding::same(Radius::SM))
-                                .min_size(Vec2::new(32.0, 30.0)),
+                            egui::Button::new(
+                                RichText::new("•••").size(12.0).color(p.ink_secondary),
+                            )
+                            .fill(p.bg_elevated)
+                            .rounding(Rounding::same(Radius::SM))
+                            .min_size(Vec2::new(32.0, 30.0)),
                         )
                         .on_hover_text("Abrir formulario completo")
                         .clicked()
@@ -708,15 +756,13 @@ pub fn render_inspector(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
                             } else {
                                 "Sincronizado"
                             };
-                            ui.label(
-                                RichText::new(st)
-                                    .size(10.5)
-                                    .color(if app.notes_dirty_at.is_some() {
-                                        p.accent
-                                    } else {
-                                        p.done_green
-                                    }),
-                            );
+                            ui.label(RichText::new(st).size(10.5).color(
+                                if app.notes_dirty_at.is_some() {
+                                    p.accent
+                                } else {
+                                    p.done_green
+                                },
+                            ));
                         });
                     });
                     ui.add_space(Spacing::XS);

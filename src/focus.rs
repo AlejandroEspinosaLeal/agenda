@@ -80,8 +80,7 @@ impl FocusTimer {
     pub fn is_break(&self) -> bool {
         matches!(
             self.phase,
-            FocusPhase::Running { is_break: true, .. }
-                | FocusPhase::Paused { is_break: true, .. }
+            FocusPhase::Running { is_break: true, .. } | FocusPhase::Paused { is_break: true, .. }
         )
     }
 

@@ -1,4 +1,4 @@
-use eframe::egui::{self, Align, Color32, FontId, Layout, RichText, Rounding, Sense, Stroke, Vec2};
+use eframe::egui::{self, Align, FontId, Layout, RichText, Rounding, Sense, Stroke, Vec2};
 
 use crate::app::{ActiveView, AgendaApp, GridCreateDrag};
 use crate::calendar::{month_name_es, month_short_es, Date};
@@ -106,78 +106,77 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
             {
                 app.select_date(app.selected_date.add_days(-7));
             }
-
-            ui.add_space(Spacing::SM);
-
-            // Toggle Modo Dual: Horario vs Tablero
-            for (is_sched, lbl) in [(true, "Modo Horario"), (false, "Modo Tablero")] {
-                let sel = app.weekly_schedule_mode == is_sched;
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new(lbl)
-                                .size(12.0)
-                                .strong()
-                                .color(if sel { Color32::WHITE } else { p.ink_primary }),
-                        )
-                        .fill(if sel { p.accent } else { p.bg_surface })
-                        .min_size(Vec2::new(102.0, 32.0)),
-                    )
-                    .clicked()
-                {
-                    app.weekly_schedule_mode = is_sched;
-                }
-            }
         });
     });
 
     ui.add_space(Spacing::SM);
 
-    // Filtros por categoría + métricas clave a la derecha
-    ui.horizontal(|ui| {
+    // Filtros por categoría + conmutador de modo dual
+    ui.horizontal_wrapped(|ui| {
         views::category_filter_pills(ui, &mut app.category_filter, p);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let footer_lbl = if app.weekly_footer_open {
-                "▼ Ocultar resumen"
-            } else {
-                "▲ Ver resumen"
-            };
+        ui.add_space(Spacing::SM);
+        for (is_sched, lbl) in [(true, "Modo Horario"), (false, "Modo Tablero")] {
+            let sel = app.weekly_schedule_mode == is_sched;
             if ui
                 .add(
-                    egui::Button::new(RichText::new(footer_lbl).size(11.5).color(p.ink_secondary))
-                        .fill(p.bg_elevated)
-                        .rounding(Rounding::same(Radius::SM)),
+                    egui::Button::new(RichText::new(lbl).size(12.0).strong().color(if sel {
+                        p.on_accent
+                    } else {
+                        p.ink_primary
+                    }))
+                    .fill(if sel { p.accent } else { p.bg_surface })
+                    .min_size(Vec2::new(102.0, 32.0)),
                 )
                 .clicked()
             {
-                app.weekly_footer_open = !app.weekly_footer_open;
+                app.weekly_schedule_mode = is_sched;
             }
+        }
+    });
 
-            views::badge(
-                ui,
-                &format!("LIBRE: {free_pct}%"),
-                p.accent,
-                p.accent_soft,
-            );
-            views::badge(
-                ui,
-                &format!("{week_done} Completadas"),
-                p.done_green,
-                p.done_bg,
-            );
-            views::badge(
-                ui,
-                &format!("{week_total} Bloques"),
-                p.ink_primary,
-                p.bg_surface,
-            );
-        });
+    ui.add_space(Spacing::SM);
+
+    // Métricas clave y resumen semanal
+    ui.horizontal_wrapped(|ui| {
+        let footer_lbl = if app.weekly_footer_open {
+            "v Ocultar resumen"
+        } else {
+            "^ Ver resumen"
+        };
+        if ui
+            .add(
+                egui::Button::new(RichText::new(footer_lbl).size(11.5).color(p.ink_secondary))
+                    .fill(p.bg_elevated)
+                    .rounding(Rounding::same(Radius::SM)),
+            )
+            .clicked()
+        {
+            app.weekly_footer_open = !app.weekly_footer_open;
+        }
+
+        views::badge(ui, &format!("LIBRE: {free_pct}%"), p.accent, p.accent_soft);
+        views::badge(
+            ui,
+            &format!("{week_done} Completadas"),
+            p.done_green,
+            p.done_bg,
+        );
+        views::badge(
+            ui,
+            &format!("{week_total} Bloques"),
+            p.ink_primary,
+            p.bg_surface,
+        );
     });
 
     ui.add_space(Spacing::SM);
 
     let avail = ui.available_size();
-    let bottom_h = if app.weekly_footer_open { 174.0_f32 } else { 0.0 };
+    let bottom_h = if app.weekly_footer_open {
+        174.0_f32
+    } else {
+        0.0
+    };
     let board_h = if app.weekly_footer_open {
         (avail.y - bottom_h - 18.0).clamp(240.0, 440.0)
     } else {
@@ -192,7 +191,9 @@ pub fn render(app: &mut AgendaApp, ui: &mut egui::Ui, p: Palette) {
 
     if app.weekly_footer_open {
         ui.add_space(Spacing::MD);
-        render_analytical_footer(app, ui, p, week_start, week_num, week_total, week_done, avail.x, bottom_h);
+        render_analytical_footer(
+            app, ui, p, week_start, week_num, week_total, week_done, avail.x, bottom_h,
+        );
     }
 }
 
@@ -206,7 +207,9 @@ fn render_schedule_mode(
 ) {
     let axis_w = 50.0_f32;
     let col_gap = 4.0_f32;
-    let col_w = ((avail_x - axis_w - col_gap * 6.0 - 16.0) / 7.0).floor().max(76.0);
+    let col_w = ((avail_x - axis_w - col_gap * 6.0 - 16.0) / 7.0)
+        .floor()
+        .max(76.0);
     let start_hour: u32 = 6;
     let end_hour: u32 = 23;
     let hour_h = 36.0_f32;
@@ -605,8 +608,16 @@ fn render_board_mode(
                     egui::Frame::none()
                         .fill(p.bg_surface)
                         .stroke(Stroke::new(
-                            if is_today || is_selected { 2.0_f32 } else { 1.0_f32 },
-                            if is_today || is_selected { p.accent } else { p.border_subtle },
+                            if is_today || is_selected {
+                                2.0_f32
+                            } else {
+                                1.0_f32
+                            },
+                            if is_today || is_selected {
+                                p.accent
+                            } else {
+                                p.border_subtle
+                            },
                         ))
                         .rounding(Rounding::same(Radius::LG))
                         .inner_margin(10.0)
@@ -627,7 +638,7 @@ fn render_board_mode(
                                             views::badge(
                                                 ui,
                                                 &day.day.to_string(),
-                                                Color32::WHITE,
+                                                p.on_accent,
                                                 p.accent,
                                             );
                                         } else {
@@ -655,9 +666,12 @@ fn render_board_mode(
                                             .color(p.ink_muted),
                                     );
                                     if is_today {
-                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                            views::badge(ui, "HOY", p.accent, p.accent_soft);
-                                        });
+                                        ui.with_layout(
+                                            Layout::right_to_left(Align::Center),
+                                            |ui| {
+                                                views::badge(ui, "HOY", p.accent, p.accent_soft);
+                                            },
+                                        );
                                     }
                                 });
 
@@ -677,7 +691,11 @@ fn render_board_mode(
                                                 p,
                                             );
                                             egui::Frame::none()
-                                                .fill(if task.done { p.done_bg } else { p.bg_canvas })
+                                                .fill(if task.done {
+                                                    p.done_bg
+                                                } else {
+                                                    p.bg_canvas
+                                                })
                                                 .stroke(Stroke::new(1.0_f32, p.border_subtle))
                                                 .rounding(Rounding::same(Radius::MD))
                                                 .inner_margin(8.0)
@@ -685,14 +703,16 @@ fn render_board_mode(
                                                     ui.vertical(|ui| {
                                                         ui.horizontal(|ui| {
                                                             if !task.time.is_empty() {
-                                                                let t_lbl = if task.end_time.is_empty() {
-                                                                    task.time.clone()
-                                                                } else {
-                                                                    format!(
-                                                                        "{}-{}",
-                                                                        task.time, task.end_time
-                                                                    )
-                                                                };
+                                                                let t_lbl =
+                                                                    if task.end_time.is_empty() {
+                                                                        task.time.clone()
+                                                                    } else {
+                                                                        format!(
+                                                                            "{}-{}",
+                                                                            task.time,
+                                                                            task.end_time
+                                                                        )
+                                                                    };
                                                                 ui.label(
                                                                     RichText::new(t_lbl)
                                                                         .size(10.0)
@@ -724,7 +744,8 @@ fn render_board_mode(
                                                                 .strikethrough()
                                                                 .color(p.ink_muted);
                                                         } else {
-                                                            title_rt = title_rt.color(p.ink_primary);
+                                                            title_rt =
+                                                                title_rt.color(p.ink_primary);
                                                         }
                                                         ui.add(egui::Label::new(title_rt).wrap());
 
@@ -737,7 +758,9 @@ fn render_board_mode(
                                                                 );
                                                             }
                                                             ui.with_layout(
-                                                                Layout::right_to_left(Align::Center),
+                                                                Layout::right_to_left(
+                                                                    Align::Center,
+                                                                ),
                                                                 |ui| {
                                                                     let mut checked = task.done;
                                                                     if ui
@@ -760,11 +783,13 @@ fn render_board_mode(
 
                                 ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                                     ui.horizontal(|ui| {
-                                        let add_w = (ui.available_width() - 32.0).max(40.0);
+                                        let add_w = (ui.available_width() - 32.0).max(24.0);
+                                        let add_label =
+                                            if col_w < 115.0 { "+" } else { "+ Añadir" };
                                         if ui
                                             .add(
                                                 egui::Button::new(
-                                                    RichText::new("+ Añadir")
+                                                    RichText::new(add_label)
                                                         .size(11.0)
                                                         .color(p.ink_secondary),
                                                 )
@@ -778,7 +803,7 @@ fn render_board_mode(
                                         if ui
                                             .add(
                                                 egui::Button::new(
-                                                    RichText::new("↗").size(12.0).color(p.accent),
+                                                    RichText::new(">").size(12.0).color(p.accent),
                                                 )
                                                 .fill(p.accent_soft)
                                                 .min_size(Vec2::new(26.0, 26.0)),
@@ -993,7 +1018,7 @@ fn render_analytical_footer(
                                     Layout::left_to_right(Align::Center),
                                     |ui| {
                                         ui.menu_button(
-                                            RichText::new("Exportar ▾")
+                                            RichText::new("Exportar v")
                                                 .size(11.5)
                                                 .color(p.ink_primary),
                                             |ui| {
@@ -1028,7 +1053,7 @@ fn render_analytical_footer(
                                             RichText::new("Agenda de Hoy")
                                                 .size(11.5)
                                                 .strong()
-                                                .color(Color32::WHITE),
+                                                .color(p.on_accent),
                                         )
                                         .fill(p.accent)
                                         .min_size(Vec2::new(half_w, 30.0)),

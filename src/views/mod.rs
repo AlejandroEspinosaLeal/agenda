@@ -31,25 +31,26 @@ pub fn badge(ui: &mut egui::Ui, text: &str, fg: Color32, bg: Color32) {
 
 /// Single reusable category filter bar (`Todas`, `Trabajo`, `Personal`, `Estudio`, `Salud`),
 /// consuming `Palette::category_token` exclusively.
-pub fn category_filter_pills(
-    ui: &mut egui::Ui,
-    active_category: &mut Option<String>,
-    p: Palette,
-) {
+pub fn category_filter_pills(ui: &mut egui::Ui, active_category: &mut Option<String>, p: Palette) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(Spacing::XS + 2.0, Spacing::XS);
 
         let all_active = active_category.is_none();
-        let all_btn = egui::Button::new(
-            RichText::new("Todas")
-                .size(11.5)
-                .strong()
-                .color(if all_active { Color32::WHITE } else { p.ink_secondary }),
-        )
+        let all_btn = egui::Button::new(RichText::new("Todas").size(11.5).strong().color(
+            if all_active {
+                p.on_accent
+            } else {
+                p.ink_secondary
+            },
+        ))
         .fill(if all_active { p.accent } else { p.bg_elevated })
         .stroke(Stroke::new(
             1.0_f32,
-            if all_active { p.accent } else { p.border_subtle },
+            if all_active {
+                p.accent
+            } else {
+                p.border_subtle
+            },
         ))
         .rounding(Rounding::same(Radius::PILL));
         if ui.add(all_btn).clicked() {
@@ -59,15 +60,18 @@ pub fn category_filter_pills(
         for cat in TAG_PRESETS {
             let selected = active_category.as_deref() == Some(cat);
             let tok = p.category_token(cat);
-            let btn = egui::Button::new(
-                RichText::new(cat)
-                    .size(11.5)
-                    .strong()
-                    .color(if selected { Color32::WHITE } else { tok.text }),
-            )
-            .fill(if selected { tok.solid } else { tok.bg })
-            .stroke(Stroke::new(1.0_f32, if selected { tok.solid } else { tok.border }))
-            .rounding(Rounding::same(Radius::PILL));
+            let btn =
+                egui::Button::new(RichText::new(cat).size(11.5).strong().color(if selected {
+                    tok.on_solid
+                } else {
+                    tok.text
+                }))
+                .fill(if selected { tok.solid } else { tok.bg })
+                .stroke(Stroke::new(
+                    1.0_f32,
+                    if selected { tok.solid } else { tok.border },
+                ))
+                .rounding(Rounding::same(Radius::PILL));
             if ui.add(btn).clicked() {
                 if selected {
                     *active_category = None;
@@ -92,11 +96,11 @@ pub fn schedule_and_recurrence_controls(
         ui.label(RichText::new("Horario:").size(11.5).color(p.ink_secondary));
         for (is_all_day, lbl) in [(true, "Todo el día"), (false, "Con hora")] {
             let sel = *all_day == is_all_day;
-            let btn = egui::Button::new(
-                RichText::new(lbl)
-                    .size(11.0)
-                    .color(if sel { Color32::WHITE } else { p.ink_primary }),
-            )
+            let btn = egui::Button::new(RichText::new(lbl).size(11.0).color(if sel {
+                p.on_accent
+            } else {
+                p.ink_primary
+            }))
             .fill(if sel { p.accent } else { p.bg_elevated })
             .rounding(Rounding::same(Radius::SM));
             if ui.add(btn).clicked() {
@@ -139,11 +143,11 @@ pub fn schedule_and_recurrence_controls(
             (Recurrence::Monthly, "Mensual"),
         ] {
             let sel = *recurrence == rec;
-            let btn = egui::Button::new(
-                RichText::new(lbl)
-                    .size(11.0)
-                    .color(if sel { Color32::WHITE } else { p.ink_primary }),
-            )
+            let btn = egui::Button::new(RichText::new(lbl).size(11.0).color(if sel {
+                p.on_accent
+            } else {
+                p.ink_primary
+            }))
             .fill(if sel { p.accent } else { p.bg_elevated })
             .rounding(Rounding::same(Radius::SM));
             if ui.add(btn).clicked() {
@@ -153,11 +157,7 @@ pub fn schedule_and_recurrence_controls(
     });
 }
 
-pub fn task_matches_filters(
-    task: &Task,
-    query: &str,
-    category_filter: Option<&str>,
-) -> bool {
+pub fn task_matches_filters(task: &Task, query: &str, category_filter: Option<&str>) -> bool {
     if let Some(cat) = category_filter {
         if task.tag != cat {
             return false;
